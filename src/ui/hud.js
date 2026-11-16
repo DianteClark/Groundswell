@@ -5,6 +5,7 @@ import { XP_TABLE, ULT_LEVEL, ELEMENT_INFO, WYRM_FIRST, COLOSSUS_FIRST } from '.
 import Save from '../meta/save.js';
 import { esc, frag, fmt, fmtTime, heroChipHTML } from './dom.js';
 import { sfx, setVolume } from './audio.js';
+import { installMobileGuards, setMatchMode } from './mobile.js';
 
 const EL_COLOR = { ember: '#ff6a2a', tide: '#3ab6ff', gale: '#8ff0c8', stone: '#d2aa6a' };
 const TAG_GLYPH = { engage: '💥', poke: '✴️', escape: '💨', peel: '🛡️', farm: '🌾', burst: '💢', cc: '🌀', heal: '💚', shield: '🔰', zone: '☁️', dash: '💨', mobility: '💨', damage: '✴️' };
@@ -17,6 +18,7 @@ export class Hud {
   constructor(rootEl, match, renderer, localPlayerId, opts = {}) {
     this.m = match; this.r = renderer; this.pid = localPlayerId ?? match.localPlayerId;
     this.touch = opts.touch ?? isTouchDevice();
+    installMobileGuards();
     this.onQuit = opts.onQuit || null;   // optional: called when player confirms "Leave match"
     this.hero = match.heroOf ? match.heroOf(this.pid) : match.heroes[0];
     this.team = this.hero?.team ?? 0;
@@ -76,6 +78,14 @@ export class Hud {
     }
     this.els.prio.classList.toggle('on', !!this.settings.champPriority);
     this._mmBase = this._drawMinimapBase();
+    if (this.touch) {
+      this._layoutTouch = this._layoutTouch.bind(this);
+      this._layoutTouch();
+      window.addEventListener('resize', this._layoutTouch);
+      window.visualViewport?.addEventListener('resize', this._layoutTouch);
+      setTimeout(this._layoutTouch, 300);
+    }
+    setMatchMode(true);
     this.root.addEventListener('click', (e) => this._onClick(e));
     this.root.addEventListener('contextmenu', (e) => e.preventDefault());
     if (!this.touch) {
@@ -433,7 +443,56 @@ export class Hud {
     }
   }
 
+  /** Size & place touch controls from the real viewport + safe areas (thumb-friendly on SE … Pro Max). */
+  safeInsets() {
+    const pr = this._probe || (this._probe = Object.assign(document.createElement('div'), { style: 'position:fixed;visibility:hidden;pointer-events:none;padding:var(--sat) var(--sar) var(--sab) var(--sal)' }));
+    if (!pr.isConnected) this.root.appendChild(pr);
+    const cs = getComputedStyle(pr);
+    return { t: parseFloat(cs.paddingTop) || 0, r: parseFloat(cs.paddingRight) || 0, b: parseFloat(cs.paddingBottom) || 0, l: parseFloat(cs.paddingLeft) || 0 };
+  }
+  _layoutTouch() {
+    const W = window.innerWidth, H = window.innerHeight; if (!W || !H) return;
+    const si = this.safeInsets(); const ts = Save.get().settings.touchSize || 1;
+    const short = Math.min(W, H), wide = Math.max(W, H);
+    const a = Math.round(Math.max(50, Math.min(76, short * 0.168)) * ts);   // ability button
+    const A = Math.round(a * 1.42);                                          // attack button
+    const gap = Math.round(a * 0.16);
+    const x0 = W - si.r - 12, y0 = H - Math.max(si.b, 4) - 10;
+    const cx = x0 - A / 2, cy = y0 - A / 2;
+    const R = A / 2 + a / 2 + gap, R2 = R + a * 0.95 + gap;
+    const place = (el, ang, rad, size) => {
+      if (!el) return; const t = ang * Math.PI / 180;
+      const x = cx + rad * Math.cos(t), y = cy - rad * Math.sin(t);
+      Object.assign(el.style, { left: Math.round(x - size / 2) + 'px', top: Math.round(y - size / 2) + 'px', width: size + 'px', height: size + 'px', right: 'auto', bottom: 'auto' });
+      el.style.setProperty('--s', size + 'px'); el.style.setProperty('--abs', size + 'px');
+    };
+    const E = this.els;
+    place(E.attack, 0, 0, A);
+    place(E.abilities.q, 178, R, a);
+    place(E.abilities.w, 133, R, a);
+    place(E.abilities.r, 88, R, a);
+    place(E.abilities.relic, 180, R + a * 0.5 + gap + a * 0.41, Math.round(a * 0.82));
+    place(E.recallBtn, 156, R2, Math.round(a * 0.72));
+    place(E.shopBtn, 127, R2 + a * 0.08, Math.round(a * 0.72));
+    place(E.prio, 62, A / 2 + a * 0.12, Math.round(Math.max(34, a * 0.52)));
+    // left column: minimap + status card
+    const mw = Math.round(Math.max(118, Math.min(176, short * 0.4)));
+    const st = this.root.style;
+    st.setProperty('--mm-x', (si.l + 8) + 'px'); st.setProperty('--mm-y', (si.t + 6) + 'px'); st.setProperty('--mm-w', mw + 'px');
+    st.setProperty('--card-y', (si.t + 6 + Math.round(mw * 2 / 3) + 6) + 'px');
+    st.setProperty('--hp-w', Math.round(Math.max(120, Math.min(170, wide * 0.17))) + 'px');
+    // joystick
+    const jb = Math.round(a * 2.1);
+    st.setProperty('--jb', jb + 'px');
+    st.setProperty('--jgx', Math.round(si.l + 22 + jb / 2) + 'px'); st.setProperty('--jgy', Math.round(y0 - jb / 2 - 4) + 'px');
+    // aim-cancel: above the ability cluster, away from thumbs
+    st.setProperty('--cx', Math.round(cx - R * 0.4) + 'px'); st.setProperty('--cy', Math.round(Math.max(si.t + 60, cy - R2 - a * 1.4)) + 'px');
+    this.layout = { a, A, R, R2, cx, cy, jb, si, W, H };
+  }
+
   dispose() {
+    setMatchMode(false);
+    if (this.touch) { window.removeEventListener('resize', this._layoutTouch); window.visualViewport?.removeEventListener('resize', this._layoutTouch); }
     window.removeEventListener('keydown', this._onKey); window.removeEventListener('keyup', this._onKey);
     clearTimeout(this._bt); this.root.remove();
   }

@@ -112,13 +112,14 @@ export class Input {
   _setupTouch() {
     const hud = this.hud; const root = hud?.root || document.body;
     this.joyEl = frag('<div class="joy"><div class="joy-base"></div><div class="joy-knob"></div></div>');
+    this.ghostEl = frag('<div class="joy-ghost"></div>');
     this.cancelEl = frag('<div class="aim-cancel">✕<small>Cancel</small></div>');
-    root.appendChild(this.joyEl); root.appendChild(this.cancelEl);
+    root.appendChild(this.joyEl); root.appendChild(this.ghostEl); root.appendChild(this.cancelEl);
     const on = this._on;
     // joystick: touches starting on the left 45% of the canvas
     on(this.cv, 'pointerdown', e => {
       if (e.pointerType === 'mouse') return;
-      if (e.clientX < innerWidth * 0.45 && !this.joy) {
+      if (e.clientX < innerWidth * 0.5 && !this.joy) {
         e.preventDefault();
         this.joy = { id: e.pointerId, ox: e.clientX, oy: e.clientY, dx: 0, dy: 0 };
         try { this.cv.setPointerCapture?.(e.pointerId); } catch (_) { /* */ }
@@ -174,7 +175,7 @@ export class Input {
     on(hud.els.shopBtn, 'pointerdown', e => { e.preventDefault(); hud.toggleShop(); });
   }
   _joyDraw() {
-    const el = this.joyEl; const j = this.joy; const R = 60 * (this.settings.touchSize || 1);
+    const el = this.joyEl; const j = this.joy; const R = (this.hud?.layout?.jb || 130) * 0.42;
     if (!j) { el.classList.remove('on'); return; }
     el.classList.add('on');
     const l = Math.hypot(j.dx, j.dy); const k = l > R ? R / l : 1;
@@ -183,7 +184,7 @@ export class Input {
   }
   _aimPoint(a) {
     const h = this.hero; const range = this.abilityRange(a.slot); const d = this.abilityDef(a.slot);
-    const maxDrag = 90 * (this.settings.touchSize || 1);
+    const maxDrag = (this.hud?.layout?.a || 62) * 1.5;
     const len = Math.hypot(a.dx, a.dy); const frac = Math.min(1, len / maxDrag);
     const dir = this.screenDirToWorld(a.dx, a.dy);
     const tg = d?.targeting;
@@ -248,7 +249,7 @@ export class Input {
   }
   dispose() {
     for (const [el, ev, fn, opt] of this._h) el.removeEventListener(ev, fn, opt);
-    this._h = []; this.joyEl?.remove(); this.cancelEl?.remove(); clearTimeout(this._lp);
+    this._h = []; this.joyEl?.remove(); this.ghostEl?.remove(); this.cancelEl?.remove(); clearTimeout(this._lp);
     if (this.hud) this.hud.castCb = null;
   }
 }

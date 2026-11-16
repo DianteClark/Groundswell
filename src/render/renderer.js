@@ -238,7 +238,7 @@ export class Renderer {
     this.camT.x = lerp(this.camT.x, tx, k); this.camT.z = lerp(this.camT.z, tz, k);
     if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 2.5);
     const sh = (this.shake || 0) * 0.6;
-    const D = this.camDist * clamp(0.75 / this.camera.aspect, 1, 1.6);
+    const D = this.camDist * clamp(0.75 / this.camera.aspect, 1, 1.6) * (this.h < 450 && this.camera.aspect > 1 ? 0.88 : 1); // phones in landscape: zoom in a bit
     this.camera.position.set(this.camT.x + (Math.random() - 0.5) * sh, D * Math.sin(PITCH), this.camT.z + D * Math.cos(PITCH) + (Math.random() - 0.5) * sh);
     this.camera.lookAt(this.camT.x, 0, this.camT.z);
     // light follows view center (texel-snapped)

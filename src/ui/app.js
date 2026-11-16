@@ -6,6 +6,7 @@ import { refreshQuests, DIFFICULTIES, diffInfo, rankInfo, xpToNext, seasonTier, 
 import { esc, frag, fmt, fmtTime, avatarHTML, bannerStyle, bannerClass, titleHTML, heroArtHTML, heroChipHTML, toast, modal, countUp, profileCardHTML, ESS, PRI, rarityColor, setPortraitRenderer } from './dom.js';
 import { sfx, setVolume } from './audio.js';
 import { MetaScreens } from './screens.js';
+import { installMobileGuards, isIOS, isStandalone } from './mobile.js';
 
 const NAV = [
   { id: 'home', label: 'Home', icon: '⌂' },
@@ -21,6 +22,8 @@ export class App {
     this.root = rootEl || document.body;
     this.opts = opts;
     setPortraitRenderer(opts.renderHeroPortrait);
+    installMobileGuards();
+    this._installRotate();
     this.s = Save.load();
     refreshQuests(this.s);
     checkFlairUnlocks(this.s); Save.persist();
@@ -45,6 +48,14 @@ export class App {
   }
 
   get settings() { return this.s.settings; }
+  _installRotate() {
+    if (!document.querySelector('.gs-rotate')) {
+      document.body.appendChild(frag(`<div class="gs-rotate"><div class="gr-logo"><span class="logo-mark">◆</span><span class="logo-t">GROUND<b>SWELL</b></span></div>
+        <div class="gr-phone"><div class="gr-screen"></div></div><b class="gr-t">Rotate your phone</b><span class="gr-s">Groundswell is played in landscape</span></div>`));
+    }
+    const lock = () => { try { const p = screen.orientation?.lock?.('landscape'); if (p && p.catch) p.catch(() => {}); } catch (e) { /* unsupported (iOS) */ } };
+    window.addEventListener('pointerdown', lock, { once: true, capture: true });
+  }
   /** Settings for main.js / renderer. quality resolved to 'low'|'med'|'high'. */
   getSettings() {
     const st = Save.get().settings;
@@ -70,6 +81,7 @@ export class App {
     if (sub) Object.assign(this.ui[screen] || (this.ui[screen] = {}), sub);
     if (this.screen !== screen) this.main.scrollTop = 0;
     this.screen = screen;
+    this.el.dataset.screen = screen;
     this.render();
   }
   renderTop() {
@@ -154,11 +166,10 @@ export class App {
     const mp = masteryProgress(Save.masteryOf(h.id));
     const tier = seasonTier(s.season.xp); const tierPct = tier >= SEASON.tiers ? 1 : (s.season.xp % SEASON.xpPerTier) / SEASON.xpPerTier;
     const xpPct = s.xp / xpToNext(s.level);
+    const tip = isIOS() && !isStandalone() && !localStorage.getItem('gs_a2hs_tip');
     return `
     <div class="home-grid">
-      <section class="home-hero">
-        ${profileCardHTML({ ...this.profile(), sub: `<span class="rankchip" style="--rc:${li.rank.color}">${li.rank.icon} ${li.label}</span>` }, { cls: 'big', av: 78 })}
-        <div class="xpbar" title="Account XP"><div class="xpfill" style="width:${(xpPct * 100).toFixed(1)}%"></div><span>Level ${s.level} · ${fmt(s.xp)} / ${fmt(xpToNext(s.level))} XP</span></div>
+      <section class="home-left">
         <div class="showcase" data-act="play">
           <div class="preview-slot sc-prev" data-hero="${h.id}" data-skin="${this.pickSkin(h.id)}"></div>
           <div class="sc-info">
@@ -167,16 +178,19 @@ export class App {
           </div>
         </div>
         <button class="btn play-btn" data-act="play"><span class="pb-shine"></span><span class="pb-t">PLAY</span><span class="pb-s">vs Bots · ${diffInfo(this.ui.play.difficulty).name}</span></button>
-        <div class="fw ${fwDone ? 'done' : ''}">${fwDone ? `✔ First win claimed · resets in ${fmtCountdown(msToMidnight())}` : `<b>First Win of the Day</b> available: ${PRI}50 ${ESS}200`}</div>
+        <div class="fw ${fwDone ? 'done' : ''}">${fwDone ? `✔ First win claimed · resets in ${fmtCountdown(msToMidnight())}` : `<b>First Win</b> bonus ready: ${PRI}50 ${ESS}200`}</div>
       </section>
-      <section class="home-side">
+      <section class="home-side" data-scroll="home-side">
+        ${tip ? `<div class="a2hs"><span class="a2-ic">📲</span><div><b>Play full-screen</b><small>Tap <span class="a2-share">⬆︎</span> Share, then <b>Add to Home Screen</b>.</small></div><button class="a2-x" data-act="a2hsClose" aria-label="Dismiss">✕</button></div>` : ''}
+        ${profileCardHTML({ ...this.profile(), sub: `<span class="rankchip" style="--rc:${li.rank.color}">${li.rank.icon} ${li.label}</span>` }, { cls: 'big', av: 64 })}
+        <div class="xpbar" title="Account XP"><div class="xpfill" style="width:${(xpPct * 100).toFixed(1)}%"></div><span>Level ${s.level} · ${fmt(s.xp)} / ${fmt(xpToNext(s.level))} XP</span></div>
         <div class="panel quests">
           <div class="ph"><h3>Daily Quests</h3><span class="muted">Resets in ${fmtCountdown(msToMidnight())}</span></div>
           ${q.daily.map((x, i) => this.questHTML(x, i)).join('')}
           ${q.weekly ? `<div class="ph sm"><h4>Weekly</h4></div>${this.questHTML(q.weekly, -1)}` : ''}
         </div>
         <div class="panel season tile" data-act="seasonTrack">
-          <div class="ph"><h3>${esc(SEASON.name)}</h3><span class="muted">Free track · Tier ${tier}/${SEASON.tiers}</span></div>
+          <div class="ph"><h3>${esc(SEASON.name)}</h3><span class="muted">Tier ${tier}/${SEASON.tiers}</span></div>
           <div class="st-row" data-scroll="st">${Array.from({ length: 6 }, (_, i) => { const t = Math.min(SEASON.tiers, tier + i + (tier >= SEASON.tiers ? 0 : 1)); return this.seasonNodeHTML(t, t <= tier); }).join('')}</div>
           <div class="bar"><div style="width:${(tierPct * 100).toFixed(1)}%"></div></div>
           <div class="muted sm">${tier >= SEASON.tiers ? 'Track complete!' : `${fmt(s.season.xp % SEASON.xpPerTier)} / ${SEASON.xpPerTier} to tier ${tier + 1}`} · tap to view all</div>
@@ -184,6 +198,7 @@ export class App {
       </section>
     </div>`;
   }
+  act_a2hsClose() { localStorage.setItem('gs_a2hs_tip', '1'); this.render(); }
   questHTML(q, i) {
     const pct = Math.min(1, q.p / q.n);
     const rw = [q.reward.essence ? `${ESS}${q.reward.essence}` : '', q.reward.prisms ? `${PRI}${q.reward.prisms}` : ''].join(' ');
@@ -220,41 +235,48 @@ export class App {
     const L = Save.heroLoadouts(h.id); const lo = Save.activeLoadout(h.id);
     const list = HEROES.filter(x => p.role === 'All' || x.role === p.role);
     const sk = skinById(skinId);
+    const d = diffInfo(p.difficulty);
     return `
-    <div class="play-top">
-      <button class="btn ghost back" data-go="home">‹ Back</button>
-      <div class="seg modes">
-        <button class="segb ${p.mode === 'bots' ? 'on' : ''}" data-act="mode" data-m="bots">🤖 vs Bots</button>
-        <button class="segb soon" data-act="mode" data-m="p2p">👥 Play with Friend <em>soon</em></button>
-      </div>
-    </div>
-    <div class="diffs">${DIFFICULTIES.map(d => { const un = this.diffUnlocked(d.id); return `<button class="diff ${p.difficulty === d.id ? 'on' : ''} ${un ? '' : 'locked'}" style="--dc:${d.color}" data-act="diff" data-d="${d.id}">
-      <span class="d-n">${'★'.repeat(d.id)}</span><b>${d.name}</b><span class="d-m">${un ? `×${d.mult} rewards` : `🔒 Win on ${DIFFICULTIES[d.id - 2].name}`}</span></button>`; }).join('')}</div>
-    <div class="muted center sm diff-desc">${esc(diffInfo(p.difficulty).desc)}</div>
-    <div class="play-grid">
-      <section class="panel pick">
-        <div class="chips" data-scroll="roles">${roles.map(r => `<button class="chip ${p.role === r ? 'on' : ''}" data-act="role" data-r="${esc(r)}">${r === 'All' ? 'All' : roleIcon(r) + ' ' + esc(r)}</button>`).join('')}</div>
-        <div class="hgrid">${list.map(x => { const own = Save.owns('hero', x.id); return `<button class="hcard ${x.id === h.id ? 'on' : ''} ${own ? '' : 'locked'}" style="--hc:${x.color}" data-act="pickHero" data-h="${x.id}">
-          ${heroArtHTML(x.id, this.pickSkin(x.id), 'sm')}<span class="hc-n">${esc(x.name)}</span>${own ? '' : '<span class="lock">🔒</span>'}</button>`; }).join('')}</div>
-      </section>
-      <section class="panel sel">
+    <div class="play">
+      <section class="pl-left">
         <div class="sel-prev"><div class="preview-slot" data-hero="${h.id}" data-skin="${skinId}"></div>
           <div class="sel-name"><span class="role-t">${roleIcon(h.role)} ${esc(h.role || '')}</span><h2>${esc(h.name)}</h2><div class="muted">${esc(h.title || '')}${sk && sk.rarity !== 'default' ? ` · <span style="color:${rarityColor(sk.rarity)}">${esc(sk.name)}</span>` : ''}</div></div></div>
-        <div class="lbl">Skin</div>
-        <div class="skins" data-scroll="skins">${skins.map(k => { const own = Save.owns('skin', k.id); return `<button class="skinb ${k.id === skinId ? 'on' : ''} ${own ? '' : 'locked'}" style="--rc:${rarityColor(k.rarity)}" data-act="pickSkin" data-k="${k.id}" title="${esc(k.name)}">${heroArtHTML(h.id, k.id, 'xs')}<span>${esc(k.name)}</span>${own ? '' : '<i class="lock">🔒</i>'}</button>`; }).join('')}</div>
-        <div class="lbl">Loadout <button class="link" data-act="editLoadout">Edit in Armory ›</button></div>
-        <div class="chips">${L.list.map((l, i) => `<button class="chip ${i === L.active ? 'on' : ''}" data-act="pickLoadout" data-i="${i}">${esc(l.name)}</button>`).join('')}</div>
-        ${this.jungleHint(h, lo)}
-        ${this.loadoutSummaryHTML(lo)}
+        <div class="skins" data-scroll="skins">${skins.map(k => { const own = Save.owns('skin', k.id); return `<button class="skinb ${k.id === skinId ? 'on' : ''} ${own ? '' : 'locked'}" style="--rc:${rarityColor(k.rarity)}" data-act="pickSkin" data-k="${k.id}" title="${esc(k.name)}">${heroArtHTML(h.id, k.id, 'xs')}<span>${esc(k.rarity === 'default' ? 'Default' : k.name)}</span>${own ? '' : '<i class="lock">🔒</i>'}</button>`; }).join('')}</div>
       </section>
-    </div>
-    <div class="lockbar"><div class="lb-info">${heroChipHTML(h.id, 36)}<div><b>${esc(h.name)}</b><small>${esc(diffInfo(p.difficulty).name)} · ${esc(L.list[L.active]?.name || '')}</small></div></div><button class="btn primary lockin" data-act="lockIn">LOCK IN</button></div>`;
+      <section class="pl-right">
+        <div class="pl-head">
+          <button class="btn ghost back" data-go="home" aria-label="Back">‹</button>
+          <div class="chips" data-scroll="roles">${roles.map(r => `<button class="chip ${p.role === r ? 'on' : ''}" data-act="role" data-r="${esc(r)}">${r === 'All' ? 'All' : roleIcon(r) + ' ' + esc(r)}</button>`).join('')}</div>
+          <button class="chip soon" data-act="mode" data-m="p2p">👥 <em>soon</em></button>
+        </div>
+        <div class="hgrid" data-scroll="hgrid">${list.map(x => { const own = Save.owns('hero', x.id); return `<button class="hcard ${x.id === h.id ? 'on' : ''} ${own ? '' : 'locked'}" style="--hc:${x.color}" data-act="pickHero" data-h="${x.id}">
+          ${heroArtHTML(x.id, this.pickSkin(x.id), 'sm')}<span class="hc-n">${esc(x.name)}</span>${own ? '' : '<span class="lock">🔒</span>'}</button>`; }).join('')}</div>
+        ${this.jungleHint(h, lo)}
+        <div class="pl-bar">
+          <button class="plb diffb" style="--dc:${d.color}" data-act="diffPick"><small>vs Bots</small><b>${'★'.repeat(d.id)} ${esc(d.name)}</b></button>
+          <button class="plb lob" data-act="loPickPlay"><small>Loadout · ${esc(L.list[L.active]?.name || '')}</small>${this.loadoutSummaryHTML(lo)}</button>
+          <button class="btn primary lockin" data-act="lockIn">LOCK IN</button>
+        </div>
+      </section>
+    </div>`;
+  }
+  act_diffPick() {
+    const p = this.ui.play;
+    const md = modal(`<h2>Difficulty</h2><div class="diffs">${DIFFICULTIES.map(d => { const un = this.diffUnlocked(d.id); return `<button class="diff ${p.difficulty === d.id ? 'on' : ''} ${un ? '' : 'locked'}" style="--dc:${d.color}" data-d="${d.id}">
+      <span class="d-n">${'★'.repeat(d.id)}</span><b>${d.name}</b><span class="d-m">${un ? `×${d.mult} rewards` : `🔒 Win on ${DIFFICULTIES[d.id - 2].name}`}</span></button>`; }).join('')}</div><p class="muted sm center">${esc(diffInfo(p.difficulty).desc)}</p>`, { cls: 'wide' });
+    md.el.querySelectorAll('.diff').forEach(b => b.addEventListener('click', () => { const n = +b.dataset.d; if (!this.diffUnlocked(n)) { sfx('error'); toast(`🔒 Win a match on ${DIFFICULTIES[n - 2].name} to unlock ${DIFFICULTIES[n - 1].name}`); return; } sfx('click'); this.act_diff({ d: n }); md.close(); }));
+  }
+  act_loPickPlay() {
+    const id = this.ui.play.heroId; const L = Save.heroLoadouts(id);
+    const md = modal(`<h2>Loadout</h2><div class="pick-list">${L.list.map((l, i) => { const lo = Save.sanitizeLoadout(l, id); return `<button class="pick-row ${i === L.active ? 'on' : ''}" data-i="${i}"><span class="pr-t"><b>${esc(l.name)}</b></span>${this.loadoutSummaryHTML(lo)}</button>`; }).join('')}</div><div class="buy-btns"><button class="btn" data-edit>Edit in Armory ›</button></div>`, { cls: 'wide' });
+    md.el.querySelectorAll('.pick-row').forEach(b => b.addEventListener('click', () => { L.active = +b.dataset.i; Save.persist(); sfx('click'); md.close(); this.render(); }));
+    md.el.querySelector('[data-edit]').addEventListener('click', () => { md.close(); this.act_editLoadout(); });
   }
   isJungler(h) { return h?.bot?.preferredRole === 'jungle' || /jungl/i.test(h?.role || ''); }
   jungleHint(h, lo) {
     if (!this.isJungler(h) || lo.relic === 'hunters_brand' || !RELIC_BY_ID.hunters_brand) return '';
     const r = RELIC_BY_ID.hunters_brand;
-    return `<div class="notice jg">${esc(r.icon || '🔥')} <span><b>Jungling?</b> Take <b>${esc(r.name)}</b> — it clears camps and secures Wyrms.</span><button class="btn sm primary" data-act="takeBrand">Equip</button></div>`;
+    return `<div class="notice jg">${esc(r.icon || '🔥')} <span><b>Jungler:</b> take <b>${esc(r.name)}</b> to clear camps &amp; secure Wyrms.</span><button class="btn sm primary" data-act="takeBrand">Equip</button></div>`;
   }
   act_takeBrand() {
     const id = this.ui.play.heroId; const L = Save.heroLoadouts(id);
@@ -369,6 +391,7 @@ export class App {
     this.lastResult = res; this.lastMatch = match;
     this.el.style.display = ''; this.el.classList.remove('in-match');
     this.screen = 'results';
+    this.el.dataset.screen = 'results';
     this.renderTop();
     this.main.scrollTop = 0;
     this.main.innerHTML = `<div class="scr scr-results">${this.resultsHTML(match, cfg, res)}</div>`;
