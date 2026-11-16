@@ -4,8 +4,7 @@
 
 ## ▶ Play now
 
-- **Live game (GitHub Pages):** https://dianteclark.github.io/groundswell/
-- **Live game (Claude artifact):** https://claude.ai/artifact/Leom43wi5QTGtKXGkSXkAm
+**Live game:** https://dianteclark.github.io/groundswell/
 
 Runs in any modern browser on phone or desktop. No install, no account, no servers — it's one self-contained HTML file.
 
