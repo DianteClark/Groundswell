@@ -237,6 +237,67 @@ function nyx(c, p) {
 
 // ───────────────────────────────────────────────── PIP & BOLT
 function pipHat(R, c, p) {
+  if (p.hat === 'helmet') { R.add('head', G.ico(0.45, 1), '#bff4ff', { p: [0, 0.12, 0], s: [1, 1, 1] }); R.add('head', G.torus(0.42, 0.06, 4, 10), c.primary, { p: [0, -0.15, 0], r: [PI / 2, 0, 0] }); R.add('head', G.ico(0.06, 0), c.glow, { p: [0.3, 0.45, 0], glow: true }); }
+  else if (p.hat === 'beanie') { R.add('head', G.ico(0.3, 0), c.primary, { p: [0, 0.28, -0.03], s: [1.05, 0.75, 1.05] }); R.add('head', G.ico(0.12, 0), '#ffffff', { p: [0, 0.55, -0.03] }); R.add('head', G.box(0.32, 0.08, 0.05), c.glow, { p: [0, 0.2, 0.27], glow: true }); }
+  else { R.add('head', G.cone(0.32, 0.65, 6), c.hair, { p: [0, 0.48, -0.08], r: [-0.25, 0, 0] }); R.add('head', G.torus(0.22, 0.06, 4, 8), c.metal, { p: [0, 0.28, 0.08], r: [0.3, 0, 0] }); R.add('head', G.cyl(0.08, 0.08, 0.06, 6), c.glow, { p: [0.11, 0.33, 0.27], r: [PI / 2 - 0.3, 0, 0], glow: true }); R.add('head', G.cyl(0.08, 0.08, 0.06, 6), c.glow, { p: [-0.11, 0.33, 0.27], r: [PI / 2 - 0.3, 0, 0], glow: true }); }
+}
+// Pip on foot (in-game: Bolt is a separate summon)
+function pipPilot(c, p) {
+  const R = new Rig();
+  const o = { hipY: 0.6, torsoH: 0.55, shoulderX: 0.3, hipX: 0.13, armLen: 0.5, armR: 0.08, legR: 0.1, body: c.primary, skin: c.skin, legs: c.mech2, boots: '#3a2a20', sleeve: c.primary, forearm: c.skin };
+  humanoid(R, o); limbs(R, c, o);
+  R.add('torso', G.cyl(0.3, 0.34, o.torsoH, 7), c.primary, { p: [0, o.torsoH / 2, 0] });
+  R.add('torso', G.box(0.62, 0.08, 0.5), '#5a3a20', { p: [0, 0.08, 0] });
+  R.add('torso', G.box(0.4, 0.42, 0.26), c.mech, { p: [0, 0.32, -0.32] });
+  R.add('torso', G.cyl(0.02, 0.02, 0.55, 4), c.metal, { p: [0.12, 0.75, -0.36] });
+  R.add('torso', G.ico(0.07, 0), c.glow, { p: [0.12, 1.04, -0.36], glow: true });
+  R.add('head', G.ico(0.34, 1), c.skin, { p: [0, 0.18, 0] });
+  R.add('head', G.cone(0.08, 0.16, 4), c.skin, { p: [0, 0.14, 0.34], r: [PI / 2, 0, 0] });
+  R.add('head', G.ico(0.22, 0), c.hair, { p: [0, -0.02, 0.14], s: [1.4, 0.75, 1] });
+  pipHat({ add: (b, g, col, oo) => { const pp = oo.p || [0, 0, 0]; const sc = oo.s === undefined ? [1, 1, 1] : typeof oo.s === 'number' ? [oo.s, oo.s, oo.s] : oo.s; R.add('head', g, col, { ...oo, p: [pp[0] * 1.1, pp[1] * 1.1 + 0.08, pp[2] * 1.1], s: sc.map((v) => v * 1.1) }); } }, c, p);
+  R.add('armR', G.cyl(0.04, 0.04, 0.7, 4), c.metal, { p: [0, -o.armLen, 0.3], r: [PI / 2, 0, 0] });
+  R.add('armR', G.torus(0.13, 0.05, 3, 8, PI * 1.4), c.metal, { p: [0, -o.armLen, 0.7], r: [0, PI / 2, 0.7] });
+  return { R, scale: 1.35, height: 2.3, style: 'staff', runFreq: 13, lean: 0.2 };
+}
+function pip(c, p, variant) {
+  if (variant === 'pilot') return pipPilot(c, p);
+  const mechOnly = variant === 'mech';
+  const R = new Rig();
+  R.bone('hips', 'root', [0, 0.95, 0]);
+  R.bone('torso', 'hips', [0, 0, 0]);
+  R.bone('legL', 'hips', [0.5, 0, 0]); R.bone('legR', 'hips', [-0.5, 0, 0]);
+  R.bone('armL', 'torso', [0.95, 1.05, 0.05]); R.bone('armR', 'torso', [-0.95, 1.05, 0.05]);
+  R.bone('pip', 'torso', [0, 1.55, -0.1]);
+  const sleek = p.mech === 'sleek', rusty = p.mech === 'rusty';
+  if (sleek) { R.add('torso', G.ico(0.85, 1), c.mech, { p: [0, 0.75, 0], s: [1.05, 0.9, 0.9] }); R.add('torso', G.cyl(0.55, 0.65, 0.2, 10), c.mech2, { p: [0, 1.45, -0.1] }); }
+  else { R.add('torso', G.box(1.55, 1.25, 1.25), c.mech, { p: [0, 0.75, 0] }); R.add('torso', G.box(1.35, 0.2, 1.1), c.mech2, { p: [0, 1.45, -0.05] }); R.add('torso', G.box(1.6, 0.15, 1.3), c.mech2, { p: [0, 0.2, 0] }); }
+  R.add('torso', G.box(0.8, 0.22, 0.1), c.glow, { p: [0, 0.95, sleek ? 0.82 : 0.64], glow: true });
+  R.add('torso', G.cyl(0.18, 0.18, 0.1, 8), c.metal, { p: [0.45, 0.45, sleek ? 0.75 : 0.64], r: [PI / 2, 0, 0] });
+  if (rusty) { R.add('torso', G.box(0.4, 0.35, 0.05), '#8a8a7a', { p: [-0.4, 0.4, 0.64], r: [0, 0, 0.2] }); R.add('torso', G.box(0.3, 0.06, 0.06), '#d8c8a0', { p: [0.3, 1.2, 0.64], r: [0, 0, -0.4] }); }
+  R.add('torso', G.cyl(0.03, 0.03, 0.7, 4), c.metal, { p: [0.55, 1.8, -0.4] });
+  R.add('torso', G.ico(0.09, 0), c.glow, { p: [0.55, 2.18, -0.4], glow: true });
+  R.add('torso', G.box(0.5, 0.5, 0.4), c.mech2, { p: [0, 0.8, -0.75] });
+  R.add('torso', G.cyl(0.12, 0.16, 0.3, 6), c.metal, { p: [0.18, 1.15, -0.85] });
+  R.add('torso', G.cyl(0.12, 0.16, 0.3, 6), c.metal, { p: [-0.18, 1.15, -0.85] });
+  for (const s of ['legL', 'legR']) { R.add(s, G.box(0.38, 0.6, 0.42), c.mech2, { p: [0, -0.35, 0] }); R.add(s, G.box(0.55, 0.3, 0.75), c.mech, { p: [0, -0.8, 0.1] }); }
+  R.add('armL', G.ico(0.32, 0), c.mech2, {});
+  R.add('armL', G.box(0.38, 0.75, 0.38), c.mech, { p: [0.05, -0.45, 0] });
+  R.add('armL', G.cyl(0.2, 0.24, 0.65, 7), c.metal, { p: [0.05, -0.85, 0.25], r: [PI / 2, 0, 0] });
+  R.add('armL', G.cyl(0.13, 0.13, 0.05, 7), c.glow, { p: [0.05, -0.85, 0.58], r: [PI / 2, 0, 0], glow: true });
+  R.add('armR', G.ico(0.32, 0), c.mech2, {});
+  R.add('armR', G.box(0.38, 0.75, 0.38), c.mech, { p: [-0.05, -0.45, 0] });
+  R.add('armR', G.box(0.12, 0.4, 0.12), c.metal, { p: [0.1, -1.0, 0.1], r: [0.3, 0, 0.3] });
+  R.add('armR', G.box(0.12, 0.4, 0.12), c.metal, { p: [-0.18, -1.0, 0.1], r: [0.3, 0, -0.3] });
+  if (mechOnly) { R.add('pip', G.box(0.6, 0.12, 0.5), c.mech2, { p: [0, 0.05, 0] }); R.add('pip', G.ico(0.14, 0), c.glow, { p: [0, 0.2, 0], glow: true }); return { R, scale: 1.0, height: 2.4, style: 'mech', runFreq: 7.5, lean: 0.08 }; }
+  R.bone('head', 'pip', [0, 0.55, 0]);
+  R.bone('pipArm', 'pip', [-0.22, 0.38, 0]);
+  R.add('pip', G.cyl(0.2, 0.24, 0.45, 6), c.primary, { p: [0, 0.22, 0] });
+  R.add('pipArm', G.cyl(0.05, 0.05, 0.3, 4), c.primary, { p: [0, -0.15, 0] });
+  R.add('pipArm', G.box(0.06, 0.25, 0.06), c.metal, { p: [0, -0.32, 0.08], r: [0.8, 0, 0] });
+  R.add('pip', G.cyl(0.05, 0.05, 0.3, 4), c.primary, { p: [0.22, 0.25, 0.05], r: [0.3, 0, -0.4] });
+  R.add('head', G.ico(0.3, 1), c.skin, { p: [0, 0.1, 0] });
+  R.add('head', G.cone(0.08, 0.15, 4), c.skin, { p: [0, 0.08, 0.3], r: [PI / 2, 0, 0] });
+  R.add('head', G.ico(0.2, 0), c.hair, { p: [0, -0.08, 0.12], s: [1.4, 0.7, 1] });
   pipHat(R, c, p);
   return { R, scale: 1.0, height: 3.4, style: 'mech', runFreq: 7.5, lean: 0.08 };
 }
@@ -359,7 +420,7 @@ export function buildHero(heroId, skinId, opts = {}) {
 
 // ───────────────────────────────────────────────── animation
 function reset(b) {
-  for (const k in b) { const r = b[k].userData.rest; if (!r) continue; b[k].position.copy(r.p); b[k].rotation.copy(r.r); b[k].scale.copy(r.s); }
+  for (const k in b) { const r = b[k].userData.rest; if (!r) continue; b[k].position.copy(r.p); b[k].rotation.copy(r.r); if (k !== 'root') b[k].scale.copy(r.s); }
 }
 
 export function poseRig(rig, anim, time, moving) {

@@ -62,8 +62,8 @@ export function buildArea(key, radius, color, color2) {
   const g = new THREE.Group();
   const plane = sg('aplane', () => new THREE.PlaneGeometry(2, 2).rotateX(-PI / 2));
   const mk = (tex, c, op, order, y) => { const m = new THREE.Mesh(plane, new THREE.MeshBasicMaterial({ map: tex, color: c, transparent: true, opacity: op, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2 })); m.renderOrder = order; m.position.y = y; g.add(m); return m; };
-  const fill = mk(glowTexture(), color, 0.35, 5, 0.12);
-  const ring = mk(ringTexture(), color, 0.9, 6, 0.13);
+  const fill = mk(glowTexture(), color, 0.2, 5, 0.12);
+  const ring = mk(ringTexture(), color, 0.7, 6, 0.13);
   const rune = mk(runeTexture(), color2 || color, 0.55, 6, 0.14);
   let murk = null;
   if (/mire|swamp|bog|poison/.test(key)) { murk = new THREE.Mesh(plane, new THREE.MeshBasicMaterial({ map: glowTexture(), color: '#2a3a18', transparent: true, opacity: 0.75, depthWrite: false, toneMapped: false })); murk.renderOrder = 4; murk.position.y = 0.11; murk.scale.setScalar(1.1); g.add(murk); }

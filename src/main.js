@@ -2,7 +2,7 @@
 import { Match } from './sim/match.js';
 import { DT } from './sim/constants.js';
 import { Renderer } from './render/renderer.js';
-import { createHeroPreview } from './render/preview.js';
+import { createHeroPreview, renderHeroPortrait, renderHeroPortraitAsync } from './render/preview.js';
 import { App } from './ui/app.js';
 import { Hud } from './ui/hud.js';
 import { Input } from './ui/input.js';
@@ -72,6 +72,6 @@ function quitMatch() { const m = session?.match; endSession(); if (m && m.time >
 let errShown = 0;
 function reportError(e) { if (errShown++ < 3) console.error(e); }
 
-const app = new App(root, { startMatch, createHeroPreview, quitMatch });
+const app = new App(root, { startMatch, createHeroPreview, renderHeroPortrait, renderHeroPortraitAsync, quitMatch });
 window.__gsQuit = quitMatch;
 app.showMenu();

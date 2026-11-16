@@ -5,6 +5,7 @@ import { Hud } from './hud.js';
 import { Input } from './input.js';
 import { Match } from '../sim/match.js';
 import Save from '../meta/save.js';
+import { HERO_BY_ID } from '../meta/registry.js';
 
 const hash = location.hash.slice(1) || 'home';
 const params = new URLSearchParams(location.search);
@@ -61,7 +62,16 @@ function startHud(cfg, opts = {}) {
   return { m, hud, input, r, canvas, hudRoot };
 }
 
+// fake portrait renderer (stand-in for Agent B's renderHeroPortrait) when ?portrait=1
+function fakePortrait(heroId, skinId, { size = 128 } = {}) {
+  const c = document.createElement('canvas'); c.width = c.height = size; const g = c.getContext('2d');
+  const col = HERO_BY_ID[heroId]?.color || '#888';
+  g.fillStyle = col; g.beginPath(); g.ellipse(size / 2, size * 0.95, size * 0.32, size * 0.42, 0, 0, 7); g.fill();
+  g.beginPath(); g.arc(size / 2, size * 0.36, size * 0.18, 0, 7); g.fill();
+  return c.toDataURL();
+}
 const app = new App(root, {
+  renderHeroPortrait: params.has('portrait') ? fakePortrait : undefined,
   startMatch(cfg) {
     window.__gsQuit = () => finish();
     const ctx = startHud(cfg, { stopOnEnd: true, onEnd: () => setTimeout(finish, 2500) });
@@ -90,6 +100,6 @@ else if (hash === 'results') {
   const cfg = makeConfig(app);
   startHud(cfg, {
     warm: 30 * 200,
-    setup(m) { const h = m.heroOf('p0'); h.gold = 1450; h.level = Math.max(h.level, 6); h.pendingAugment = params.has('aug') ? 3 : null; h.abilities.q.cd = 3.2; h.abilities.q.cdMax = 6; h.abilities.w.cd = 0; },
+    setup(m) { const h = m.heroOf('p0'); h.gold = 1450; h.level = Math.max(h.level, 6); h.pendingAugment = params.has('aug') ? 3 : null; h.abilities.q.cd = 3.2; h.abilities.q.cdMax = 6; h.abilities.w.cd = 0; h.abilities.w.recastUntil = m.time + 999; h.resource = { name: 'Heat', value: 62, max: 100, color: '#ff9a4a' }; if (params.has('fresh')) { h.items = [null, null, null]; h.gold = 500; h.x = 12; h.y = 80; } },
   });
 }

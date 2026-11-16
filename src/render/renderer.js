@@ -8,7 +8,8 @@ import { Vfx, makeBubbleMat } from './vfx.js';
 import { Bars } from './bars.js';
 import { ZoneFx, TelegraphFx, ZONE_COLORS } from './zones.js';
 import { buildProjectile, buildArea, runeTexture } from './projectiles.js';
-import { teamColor, ringTexture, glowTexture, makeGlowMat, makeToonMat, clamp, lerp, ease, disposeTree } from './util.js';
+import { handleAbilityFx } from './abilityfx.js';
+import { teamColor, ringTexture, thinRingTexture, glowTexture, makeGlowMat, makeToonMat, clamp, lerp, ease, disposeTree } from './util.js';
 import { getSkin } from '../data/skins.js';
 
 const PI = Math.PI;
@@ -83,6 +84,57 @@ export class Renderer {
     this.camera.fov = this.camera.aspect < 1 ? 46 : 38;
     this.camera.updateProjectionMatrix(); this._pointScale();
   }
+  focusOn(x, y) { this.follow = false; this.camFree.set(x, 0, y); this.camT.set(x, 0, y); }
+  showClickMarker(x, y, kind = 'move') {
+    const col = kind === 'attack' ? '#ff4a4a' : '#7dffb0';
+    this.vfx.ring(x, y, { color: col, r0: 1.3, r1: 0.25, dur: 0.35, easeIn: true });
+    this.vfx.ring(x, y, { color: '#ffffff', r0: 0.9, r1: 0.1, dur: 0.25, easeIn: true, alpha: 0.6 });
+    this.vfx.flash(x, 0.4, y, { color: col, size: 1.6, dur: 0.25, alpha: 0.7 });
+  }
+  /** Ability aiming overlay. o: {slot, heroId, targeting|kind, range, radius, width, x, y, tx, ty, dirX, dirY, cancel} */
+  showIndicator(o) { this.ind = { ...o }; this._indGroup(); this.indG.visible = true; }
+  hideIndicator() { this.ind = null; if (this.indG) this.indG.visible = false; }
+  _indGroup() {
+    if (this.indG) return this.indG;
+    const g = new THREE.Group(); g.renderOrder = 50;
+    const mk = (tex, order) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(2, 2).rotateX(-PI / 2), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, toneMapped: false })); m.renderOrder = order; g.add(m); return m; };
+    this.indRange = mk(thinRingTexture(), 50); this.indCircle = mk(ringTexture(), 51); this.indFill = mk(glowTexture(), 50);
+    // skillshot rectangle with chevrons
+    const cv = document.createElement('canvas'); cv.width = 64; cv.height = 256; const c2 = cv.getContext('2d');
+    const gr = c2.createLinearGradient(0, 256, 0, 0); gr.addColorStop(0, 'rgba(255,255,255,0.15)'); gr.addColorStop(1, 'rgba(255,255,255,0.45)'); c2.fillStyle = gr; c2.fillRect(0, 0, 64, 256);
+    c2.fillStyle = 'rgba(255,255,255,0.9)'; c2.fillRect(0, 0, 4, 256); c2.fillRect(60, 0, 4, 256);
+    c2.strokeStyle = 'rgba(255,255,255,0.8)'; c2.lineWidth = 5; for (let y = 20; y < 256; y += 48) { c2.beginPath(); c2.moveTo(12, y + 16); c2.lineTo(32, y); c2.lineTo(52, y + 16); c2.stroke(); }
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+    const rg = new THREE.PlaneGeometry(1, 1); rg.rotateX(-PI / 2); rg.translate(0, 0, -0.5); // extends along -Z; we rotate so -Z points at aim
+    this.indRect = new THREE.Mesh(rg, new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, toneMapped: false })); this.indRect.renderOrder = 51; g.add(this.indRect);
+    this.scene.add(g); this.indG = g; return g;
+  }
+  _updIndicator() {
+    const o = this.ind; if (!o || !this.indG) return;
+    const lh = this._localHero(); const hp = lh ? this._ipos(lh) : { x: o.x ?? 0, z: o.y ?? 0 };
+    const targeting = o.kind || o.targeting || (o.tx != null ? 'point' : 'range');
+    const range = o.range || 8; const key = (o.heroId || lh?.heroId || '') + '_' + o.slot;
+    const radius = o.radius ?? AIM_RADIUS[key] ?? 3; const width = o.width ?? AIM_WIDTH[key] ?? 1.6;
+    let dx, dz;
+    if (o.tx != null) { dx = o.tx - hp.x; dz = o.ty - hp.z; } else if (o.dirX != null) { dx = o.dirX * range; dz = o.dirY * range; } else { dx = 0; dz = 0; }
+    const d = Math.hypot(dx, dz) || 1e-6; const ang = Math.atan2(dz, dx);
+    const col = o.cancel ? '#ff4a4a' : '#8fdcff';
+    for (const m of [this.indRange, this.indCircle, this.indFill, this.indRect]) { m.material.color.set(col); m.visible = false; }
+    const pulse = 0.85 + 0.15 * Math.sin(this.time * 6);
+    this.indRange.visible = true; this.indRange.position.set(hp.x, 0.15, hp.z); this.indRange.scale.set(range, 1, range); this.indRange.material.opacity = 0.55;
+    if (targeting === 'skillshot') {
+      this.indRect.visible = true; this.indRect.position.set(hp.x, 0.16, hp.z); this.indRect.scale.set(width, 1, range); this.indRect.rotation.y = -ang - PI / 2; this.indRect.material.opacity = 0.75 * pulse;
+    } else if (targeting === 'point' || targeting === 'area' || targeting === 'unit') {
+      const k = Math.min(1, range / d); const ax = hp.x + dx * k, az = hp.z + dz * k;
+      const rr = targeting === 'unit' ? 1.6 : targeting === 'point' ? Math.min(radius, 2.2) : radius;
+      this.indCircle.visible = true; this.indCircle.position.set(ax, 0.17, az); this.indCircle.scale.set(rr, 1, rr); this.indCircle.material.opacity = 0.9 * pulse;
+      this.indFill.visible = true; this.indFill.position.set(ax, 0.16, az); this.indFill.scale.set(rr, 1, rr); this.indFill.material.opacity = 0.3;
+      if (o.tx != null) { this.indRect.visible = true; this.indRect.position.set(hp.x, 0.15, hp.z); this.indRect.scale.set(0.35, 1, Math.min(d, range)); this.indRect.rotation.y = -ang - PI / 2; this.indRect.material.opacity = 0.4; }
+    } else if (targeting === 'self') {
+      this.indCircle.visible = true; this.indCircle.position.set(hp.x, 0.17, hp.z); this.indCircle.scale.set(radius, 1, radius); this.indCircle.material.opacity = 0.9 * pulse;
+      this.indFill.visible = true; this.indFill.position.set(hp.x, 0.16, hp.z); this.indFill.scale.set(radius, 1, radius); this.indFill.material.opacity = 0.25;
+    }
+  }
   setCameraFollow(b) { this.follow = !!b; if (b) this.panOff.set(0, 0); else this.camFree.copy(this.camT); }
   panCamera(dx, dy) {
     if (this.follow) { this.panOff.x = clamp(this.panOff.x + dx, -30, 30); this.panOff.y = clamp(this.panOff.y + dy, -30, 30); }
@@ -118,7 +170,7 @@ export class Renderer {
     this.vfx.clear(); this.colorCache.clear();
   }
   dispose() {
-    this._clearMatch(); this.vfx.dispose(); this.bars.dispose(); this.minions.dispose();
+    this._clearMatch(); if (this.indG) { this.scene.remove(this.indG); disposeTree(this.indG); } this.vfx.dispose(); this.bars.dispose(); this.minions.dispose();
     this.gl.dispose(); this.gl.forceContextLoss?.();
   }
 
@@ -161,6 +213,7 @@ export class Renderer {
       this.mapView?.update(this.time, dt, m, this.vfx);
     }
     this._camera(dt);
+    this._updIndicator();
     this.vfx.update(dt);
     this._perf(dt);
     this.gl.render(this.scene, this.camera);
@@ -352,6 +405,7 @@ export class Renderer {
     }
     const c = this._colorsFor(ev.srcId) || { vfx: teamColor(ev.team ?? 2), vfx2: '#ffffff', fx: 'sparks', local: false };
     const I = this._int(c);
+    if (handleAbilityFx(this, ev, c, I)) return;
     // multi-point (e.g. constellation): connect the dots
     if (Array.isArray(ev.points) && ev.points.length > 1) {
       const pts = ev.points; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; if (i === pts.length - 1 && pts.length < 3) break; V.beam(a.x, 1.0, a.y, b.x, 1.0, b.y, { color: c.vfx, width: key.endsWith('_hit') ? 0.4 : 0.15, dur: key.endsWith('_hit') ? 0.35 : (ev.duration || 0.5) }); V.flash(a.x, 1.0, a.y, { color: c.vfx2, size: 2, dur: 0.4 }); }
@@ -463,21 +517,32 @@ export class Renderer {
         return { kind: 'projectile', group: P.group, P, color: col, color2: isTeam ? '#ffffff' : c.vfx2, y: h0, born: this.time, I: isTeam ? 0.7 : this._int(c) };
       }
       case 'area': {
+        if (model === 'mire_r' || /swamp/.test(model)) { const fx = new ZoneFx('swamp', e.x, e.y, e.radius || 13, e.team ?? 2); fx.attach(this.scene); return { kind: 'zone', zone: fx }; }
         if (/^zone_/.test(model)) { const kind = model.slice(5); const fx = new ZoneFx(kind, e.x, e.y, e.radius || 18, e.team ?? 2); fx.attach(this.scene); const fb = this.views.get('mapzone'); if (fb) { this._disposeView(fb); this.views.delete('mapzone'); } return { kind: 'zone', zone: fx }; }
         const c = this._colorsFor(e.ownerId ?? e.srcId) || { vfx: teamColor(e.team), vfx2: '#ffffff', fx: 'sparks' };
         const A = buildArea(model, e.radius || 3, c.vfx, c.vfx2); this.scene.add(A.group);
-        return { kind: 'area', group: A.group, A, c, born: this.time, I: this._int(c) };
+        const subtle = /aura/.test(model);
+        if (subtle) { A.fill.visible = false; A.rune.visible = false; }
+        let dome = null;
+        if (model === 'nyx_r' || /dome/.test(model)) { dome = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 12, 0, PI * 2, 0, PI / 2), makeBubbleMat(c.vfx)); dome.renderOrder = 16; this.scene.add(dome); const dark = new THREE.Mesh(new THREE.CircleGeometry(1, 32).rotateX(-PI / 2), new THREE.MeshBasicMaterial({ color: '#0a0612', transparent: true, opacity: 0.45, depthWrite: false })); dark.position.y = 0.1; dark.renderOrder = 4; A.group.add(dark); }
+        return { kind: 'area', group: A.group, A, c, born: this.time, I: this._int(c), subtle, dome };
       }
       case 'summon': {
-        if (e.wall || model === 'wall') { const g = this._buildWall(e); this.scene.add(g); return { kind: 'wall', group: g, born: this.time, height: 3 }; }
+        if ((e.wall || model === 'wall') && model !== 'bram_wall') { const g = this._buildWall(e); this.scene.add(g); return { kind: 'wall', group: g, born: this.time, height: 3 }; }
         const owner = e.ownerId != null ? this._ent(e.ownerId) : null; const sk = owner?.kind === 'hero' ? getSkin(owner.heroId, owner.visual?.skinId) : null;
+        if (model === 'pip_bolt' || /_mech$/.test(model)) {
+          const rig = buildHero('pip', owner?.visual?.skinId || e.visual?.skinId || 'pip_default', { variant: 'mech' }); const g = new THREE.Group(); g.add(rig.root); this.scene.add(g); rig.root.scale.setScalar(1.05);
+          const ring = this._ringDecal(teamColor(e.team), 1.7, 0.6); g.add(ring);
+          return { kind: 'summon', group: g, rig, height: 2.6, flash: 0, lag: e.hp, rot: PI / 2 - (e.facing || 0), ring, born: this.time, wolf: true, bolt: true };
+        }
         if (/afterimage|clone|decoy/.test(model) && owner?.kind === 'hero') {
           const rig = buildHero(owner.heroId, owner.visual?.skinId); const g = new THREE.Group(); g.add(rig.root); this.scene.add(g); rig.root.scale.setScalar(1.08);
           for (const mm of [rig.mat, rig.glowMat]) { mm.transparent = true; mm.opacity = 0.45; mm.depthWrite = false; } rig.mat.userData.u.rimStrength.value = 1.6; rig.mat.userData.u.rimColor.value.set(sk?.colors?.vfx || '#ffffff');
           return { kind: 'summon', group: g, rig, height: rig.def.height, flash: 0, lag: e.hp, rot: PI / 2 - (e.facing || 0), born: this.time, wolf: true, ghost: true };
         }
         const rig = buildSummon(model, e.team, sk?.colors, e.visual?.skinId || owner?.visual?.skinId); const g = new THREE.Group(); g.add(rig.root); this.scene.add(g);
-        const ring = this._ringDecal(teamColor(e.team), (e.radius || 1) * 1.4, 0.5); g.add(ring);
+        const ring = e.wall ? null : this._ringDecal(teamColor(e.team), (e.radius || 1) * 1.4, 0.5); if (ring) g.add(ring);
+        if (model === 'bram_wall') rig.root.scale.setScalar((e.radius || 1.45) / 1.45);
         return { kind: 'summon', group: g, rig, height: rig.def?.height || 2, flash: 0, lag: e.hp, rot: PI / 2 - (e.facing || 0), ring, born: this.time, wolf: !!rig.isWolf };
       }
       default: return null;
@@ -495,12 +560,12 @@ export class Renderer {
     g.position.set(e.x, 0, e.y); return g;
   }
   _makeHero(e) {
-    const rig = buildHero(e.heroId || e.visual?.model, e.visual?.skinId);
+    const hid = e.heroId || e.visual?.model; const rig = buildHero(hid, e.visual?.skinId, { variant: hid === 'pip' ? 'pilot' : undefined });
     const g = new THREE.Group(); g.add(rig.root); this.scene.add(g);
     const isLocal = e.playerId === this.localPlayerId;
     const ring = this._ringDecal(teamColor(e.team), (e.radius || 1.2) * 1.55, isLocal ? 1 : 0.75); g.add(ring);
     let ring2 = null; if (isLocal) { ring2 = this._ringDecal('#ffffff', (e.radius || 1.2) * 1.25, 0.35); g.add(ring2); }
-    rig.root.scale.setScalar(1.08);
+    rig.root.scale.multiplyScalar(1.08);
     return { kind: 'hero', group: g, rig, ring, ring2, rot: PI / 2 - (e.facing || 0), flash: 0, lag: e.hp, height: rig.def.height * 1.08, isLocal, opacity: 1, atk: 0, st: {}, skin: rig.skin, colors: rig.colors };
   }
 
@@ -545,7 +610,8 @@ export class Renderer {
         v.group.position.set(p.x, 0, p.z);
         v.rot = angLerp(v.rot, PI / 2 - facing, 1 - Math.exp(-dt * 8)); v.group.rotation.y = v.rot;
         const anim = this._anim(e, v);
-        if (v.wolf) poseRig(v.rig, anim, this.time, moving); else if (v.kind === 'monster') poseMonster(v.rig, anim, this.time, moving);
+        if (v.wolf) poseRig(v.rig, anim, this.time, moving);
+        if (v.bolt) { const air = has(e, 'airborne') || (e.buffs || []).some((b) => b.key === 'airborne'); v.air = lerp(v.air || 0, air ? 1 : 0, 1 - Math.exp(-dt * 10)); v.rig.root.position.y = v.air * 6; v.rig.root.rotation.x = v.air * 0.6; if (air && Math.random() < dt * 30) this.vfx.trail(p.x, v.air * 6 + 0.5, p.z, '#ffb84a', { style: 'embers', vy: -2, life: 0.4, size: 0.9 }); } else if (v.kind === 'monster') poseMonster(v.rig, anim, this.time, moving);
         else { const sp = v.rig.def?.spin; if (sp) { v.rig.bones[sp].rotation.y = this.time * 2; v.rig.bones[sp].position.y = 1.4 + Math.sin(this.time * 2) * 0.2; } const k = clamp((this.time - v.born) / 0.35, 0, 1); v.rig.root.scale.setScalar(ease(k)); if (!e.alive) v.rig.root.scale.multiplyScalar(Math.max(0.01, 1 - (e.anim?.t || 0) * 2)); }
         v.rig.mat.userData.u.flash.value = v.flash * 0.6;
         if (v.ring) v.ring.visible = e.alive;
@@ -570,9 +636,10 @@ export class Renderer {
         v.group.scale.set(r * kIn, 1, r * kIn);
         const remain = e.endAt != null && this.match.time != null ? e.endAt - this.match.time : 1;
         const out = remain < 0.3 ? Math.max(0, remain / 0.3) : 1;
-        A.ring.material.opacity = (0.65 + 0.25 * Math.sin(this.time * 5)) * out; A.fill.material.opacity = 0.3 * out; A.rune.material.opacity = 0.5 * out; A.rune.rotation.y = this.time * 0.6;
+        A.ring.material.opacity = (v.subtle ? 0.35 : 0.5 + 0.2 * Math.sin(this.time * 5)) * out; A.fill.material.opacity = 0.18 * out; A.rune.material.opacity = 0.45 * out; A.rune.rotation.y = this.time * 0.6;
+        if (v.dome) { v.dome.position.set(p.x, 0, p.z); v.dome.scale.set(r * kIn, r * 0.65 * kIn, r * kIn); v.dome.material.uniforms.uAlpha.value = 0.9 * out; v.dome.material.uniforms.uTime.value = this.time; }
         if (A.murk) A.murk.material.opacity = 0.7 * out;
-        if (Math.random() < dt * (6 + r * 3) * (0.5 + v.I)) { const a = Math.random() * PI * 2, rr = Math.sqrt(Math.random()) * r; this.vfx.trail(p.x + Math.cos(a) * rr, 0.2, p.z + Math.sin(a) * rr, v.c.vfx, { vy: 1.6, life: 0.9, size: 0.55, style: v.c.fx, color1: v.c.vfx2 }); }
+        if (!v.subtle && Math.random() < dt * (6 + r * 3) * (0.5 + v.I)) { const a = Math.random() * PI * 2, rr = Math.sqrt(Math.random()) * r; this.vfx.trail(p.x + Math.cos(a) * rr, 0.2, p.z + Math.sin(a) * rr, v.c.vfx, { vy: 1.6, life: 0.9, size: 0.55, style: v.c.fx, color1: v.c.vfx2 }); }
         return;
       }
       case 'zone': { v.zone.group.position.set(e.x, 0, e.y); v.zone.root.position.set(e.x, 0, e.y); v.zone.x = e.x; v.zone.z = e.y; v.zone.update(dt, this.time, this.vfx, 1); return; }
@@ -658,8 +725,12 @@ export class Renderer {
   }
   _disposeView(v) {
     if (v.zone) v.zone.dispose();
+    if (v.dome) { this.scene.remove(v.dome); v.dome.geometry.dispose(); v.dome.material.dispose(); }
     if (v.group) { this.scene.remove(v.group); v.group.traverse((o) => { if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose(); if (o.material) { const ms = Array.isArray(o.material) ? o.material : [o.material]; ms.forEach((m) => m.dispose()); } }); }
   }
 }
 
+// aim helper sizes for indicators (ability defs don't carry radius/width)
+const AIM_RADIUS = { bram_r: 7, bram_w: 2, kaela_w: 4.5, kaela_r: 4, lumi_w: 4.5, lumi_r: 8, mire_q: 3.5, mire_w: 2, mire_r: 13, nyx_r: 7.5, garrok_w: 6, garrok_q: 3.2, pip_r: 4.5, pip_w: 2, vex_w: 1.5 };
+const AIM_WIDTH = { vex_r: 2.2, vex_q: 1.4, lumi_q: 1.6, kaela_q: 2.2, nyx_q: 1.8, bram_q: 2.4, garrok_q: 2.4, pip_q: 1.4, mire_q: 1.6 };
 const FX_SHAPE = { stars: 2, constellation: 2, sunfire: 2, snow: 2, moonmotes: 2, lightning: 2, sparks: 2, pixels: 1, bats: 1, petals: 1, leaves: 1, void: 3, bubbles: 3 };

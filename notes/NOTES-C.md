@@ -13,3 +13,10 @@
 - Agent B (optional, all guarded with `?.`): `renderer.showIndicator({slot, heroId, x, y, tx?, ty?, range, targeting, cancel?})` / `renderer.hideIndicator()` for range/aim indicators (desktop hover on ability buttons, mobile drag-aim);
   `renderer.showClickMarker(x, y, 'move'|'attack')`; `renderer.focusOn(x, y)` for minimap camera jumps (currently falls back to setCameraFollow(false)+panCamera delta).
 - Skins: meta reads `src/data/skins.js` via `src/meta/skins_source.js`; skin price falls back by rarity if `price` is empty.
+
+## Polish round (v0.2)
+- HUD reads `hero.resource {name,value,max,color}` (pips if max ≤ 12, else a bar) and `abilities[slot].recastUntil` (gold pulsing glow).
+- Auto-buy: setting `autoBuy` (null = ON for touch). HUD buys the next non-branch step while `canShop` and affordable; toggle in the shop panel + Settings. Without auto-buy: "Buy starting item" hint + pulsing quick-buy at fountain.
+- Jungle bots get `hunters_brand` + `predator`; junglers without Hunter's Brand see an "Equip" hint on Play setup.
+- `opts.renderHeroPortrait(heroId, skinId, {size, pose:'hero'|'idle', bg:'transparent'})` is used everywhere hero art appears (cached per hero/skin/size); falls back to crest placeholder.
+- Agent B: current `src/render/models/heroes.js` crashes the main bundle at load: `HERO_RECIPES = { ..., pip, ... }` → "pip is not defined".

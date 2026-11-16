@@ -18,3 +18,10 @@ ownerId/srcId (projectiles/areas/summons -> owner's skin colors), endAt (areas f
   `radius+duration` → filling ground telegraph; `targetId+duration` → aura that follows the unit; `points:[...]` → connected constellation lines; `*_hit` → impact burst.
   Projectile looks are chosen by hero prefix (vex=bolt, lumi=star, pip=zap, mire=bubble, kaela=fire crescent, nyx=spinning dagger, garrok=spear, bram=rock). Summons: garrok_wolf, mire_totem, lumi_mark, bram_wall, pip_*, *_afterimage (ghost copy of owner), relic_lantern/*ward*, wall; anything else = crystal obelisk.
 - Lead: zone areas `zone_flood|ember|gale|stone|swamp` + `mapchange` telegraph/apply are fully rendered (ground "swell" heave + erupting shards on apply).
+
+## v0.2 additions
+- `renderHeroPortrait(heroId, skinId, {size=256, pose:'idle'|'action', bg=true, framing:'bust'|'full'}) -> dataURL` (preview.js). Cached by key, shared WebGL context, ~10–30 ms each uncached. `renderHeroPortraitAsync(...)` -> Promise, runs on an idle callback; use it for big grids (shop/loading).
+- Renderer hooks: `showIndicator({slot, heroId, targeting|kind, range, radius?, width?, x, y, tx?, ty?, dirX?, dirY?, cancel?})`, `hideIndicator()`, `showClickMarker(x, y, 'move'|'attack')`, `focusOn(x, y)` (snaps the camera there and turns follow off).
+  The indicator follows the local hero every frame. Default radius/width per ability come from a table in renderer.js (AIM_RADIUS / AIM_WIDTH), because ability defs don't carry them. Pass `radius`/`width` to override.
+- In-game Pip renders as the gnome on foot. Bolt is the `pip_bolt` summon (mech, skin-coloured, lifted while `airborne`). Menus/previews/portraits still show the duo.
+- Every key in VFX_KEYS.md has a hand-made effect (src/render/abilityfx.js). Unknown keys still use the generic fallbacks.

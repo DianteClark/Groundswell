@@ -268,14 +268,15 @@ export function buildSummon(model, team, colors, skinId) {
   const tc = new THREE.Color(teamColor(team)).getStyle();
   const c = colors || {};
   const vfx = c.vfx || tc, glow = c.glow || tc;
-  if (model === 'garrok_wolf' || model.endsWith('_wolf')) { const rig = buildHero('garrok_wolf', skinId || 'garrok_default'); rig.isWolf = true; return rig; }
+  if (/_wolf/.test(model)) { const rig = buildHero('garrok_wolf', skinId || 'garrok_default'); rig.isWolf = true; if (/alpha/.test(model)) { rig.root.scale.setScalar(1.5); rig.mat.userData.u.rimStrength.value = 1.2; rig.alpha = true; } return rig; }
   const R = new Rig(); R.bone('body');
   let height = 2.5, spin = null;
-  if (model === 'bram_wall') {
-    for (let i = 0; i < 7; i++) { const x = (i - 3) * 0.9; R.add('body', G.cone(0.55 + (i % 2) * 0.15, 2.6 + (i % 3) * 0.6, 5), c.primary || '#6b4a2b', { p: [x, 1.3, (i % 2) * 0.3], r: [0.15 * ((i % 3) - 1), 0, 0.2 * ((i % 2) - 0.5)] }); R.add('body', G.ico(0.35, 0), c.accent || '#6fbf3f', { p: [x + 0.2, 2.3 + (i % 3) * 0.4, 0.2] }); }
-    R.add('body', G.box(6.4, 0.3, 1.2), c.secondary || '#8a6238', { p: [0, 0.15, 0] });
-    for (let i = 0; i < 3; i++) R.add('body', G.box(0.1, 0.8, 0.05), glow, { p: [(i - 1) * 1.8, 1.1, 0.66], glow: true });
-    height = 3.5;
+  if (model === 'bram_wall') { // one living-bark wall segment (~r 1.45)
+    for (let i = 0; i < 4; i++) { const a = i * 1.7, rr = i ? 0.7 : 0; R.add('body', G.cone(0.7 - i * 0.08, 2.8 - i * 0.35, 5), i % 2 ? c.secondary || '#8a6238' : c.primary || '#6b4a2b', { p: [Math.cos(a) * rr, 1.4 - i * 0.15, Math.sin(a) * rr], r: [Math.sin(a) * 0.2, a, Math.cos(a) * 0.2] }); }
+    R.add('body', G.ico(0.45, 0), c.accent || '#6fbf3f', { p: [0.2, 2.5, 0.1] }); R.add('body', G.ico(0.32, 0), c.accent || '#6fbf3f', { p: [-0.5, 1.9, 0.3] });
+    R.add('body', G.dodec(0.9), c.secondary || '#8a6238', { p: [0, 0.2, 0], s: [1.3, 0.4, 1.3] });
+    R.add('body', G.box(0.08, 0.9, 0.05), glow, { p: [0, 1.2, 0.62], glow: true });
+    height = 3;
   } else if (model === 'mire_totem') {
     R.add('body', G.cyl(0.32, 0.4, 2.4, 6), c.wood || '#5a3e28', { p: [0, 1.2, 0] });
     R.add('body', G.ico(0.45, 0), c.secondary || '#7a9a3a', { p: [0, 0.3, 0], s: [1.5, 0.5, 1.5] });

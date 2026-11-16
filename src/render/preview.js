@@ -82,3 +82,63 @@ export function createHeroPreview(container, heroId, skinId) {
   S.previews.add(api);
   return api;
 }
+
+// ───────────────────────── static portraits (shop cards, loading screen) ─────────────────────────
+const portraitCache = new Map();
+let pScene = null;
+function portraitScene() {
+  if (pScene) return pScene;
+  const scene = new THREE.Scene();
+  scene.add(new THREE.HemisphereLight('#e8f0ff', '#3a3048', 2.3));
+  const key = new THREE.DirectionalLight('#fff0dd', 2.8); key.position.set(3, 6, 7); scene.add(key);
+  const rim = new THREE.DirectionalLight('#a8c4ff', 2.0); rim.position.set(-6, 5, -5); scene.add(rim);
+  const cam = new THREE.PerspectiveCamera(26, 1, 0.1, 100);
+  const holder = new THREE.Group(); scene.add(holder);
+  pScene = { scene, cam, holder };
+  return pScene;
+}
+
+/**
+ * Render a hero portrait to a PNG data URL (cached by key). Synchronous; ~5-15ms each on desktop.
+ * opts: { size=256, pose:'idle'|'action', bg:true|false, framing:'bust'|'full' }
+ */
+export function renderHeroPortrait(heroId, skinId, opts = {}) {
+  const size = opts.size || 256, pose = opts.pose || 'idle', bg = opts.bg !== false, framing = opts.framing || 'bust';
+  const ck = `${heroId}|${skinId}|${size}|${pose}|${bg}|${framing}`;
+  if (portraitCache.has(ck)) return portraitCache.get(ck);
+  const S = getShared(); const P = portraitScene();
+  const rig = buildHero(heroId, skinId, { rimStrength: 0.7 });
+  P.holder.add(rig.root);
+  rig.root.rotation.y = pose === 'action' ? 0.55 : 0.35;
+  poseRig(rig, pose === 'action' ? { state: 'cast', t: 0.3 } : { state: 'idle', t: 0 }, 0.4, false);
+  if (pose === 'action' && rig.bones.orbit) rig.bones.orbit.rotation.y = 1;
+  const h = (rig.def.height || 3) * (rig.def.scale || 1);
+  const tf = Math.tan((P.cam.fov * Math.PI) / 360);
+  if (framing === 'full') { const d = (h * 0.62) / tf; P.cam.position.set(0, h * 0.55, d); P.cam.lookAt(0, h * 0.47, 0); }
+  else { const d = (h * 0.42) / tf; P.cam.position.set(0, h * 0.82, d); P.cam.lookAt(0, h * 0.7, 0); }
+  P.cam.aspect = 1; P.cam.updateProjectionMatrix();
+  const full = S.gl.getSize(new THREE.Vector2());
+  if (full.x < size || full.y < size) S.gl.setSize(Math.max(full.x, size), Math.max(full.y, size), false);
+  const fy = S.gl.getSize(new THREE.Vector2()).y;
+  S.gl.setScissorTest(true); S.gl.setViewport(0, fy - size, size, size); S.gl.setScissor(0, fy - size, size, size);
+  S.gl.clear(); S.gl.render(P.scene, P.cam);
+  const cv = document.createElement('canvas'); cv.width = cv.height = size; const g = cv.getContext('2d');
+  if (bg) {
+    const sk = getSkin(heroId, skinId); const vc = new THREE.Color(sk?.colors?.vfx || '#8090ff');
+    const dark = vc.clone().multiplyScalar(0.18).getStyle(), mid = vc.clone().multiplyScalar(0.55).getStyle();
+    const gr = g.createRadialGradient(size * 0.5, size * 0.42, size * 0.05, size * 0.5, size * 0.5, size * 0.75);
+    gr.addColorStop(0, mid); gr.addColorStop(1, dark); g.fillStyle = gr; g.fillRect(0, 0, size, size);
+    g.globalAlpha = 0.25; g.strokeStyle = '#ffffff'; g.lineWidth = size / 128;
+    for (let i = 0; i < 3; i++) { g.beginPath(); g.arc(size / 2, size * 1.05, size * (0.5 + i * 0.18), Math.PI, 0); g.stroke(); }
+    g.globalAlpha = 1;
+  }
+  g.drawImage(S.gl.domElement, 0, 0, size, size, 0, 0, size, size);
+  const url = cv.toDataURL('image/png');
+  P.holder.remove(rig.root); disposeTree(rig.root);
+  portraitCache.set(ck, url);
+  return url;
+}
+/** Async/lazy variant: resolves on an idle frame so many portraits don't block a single frame. */
+export function renderHeroPortraitAsync(heroId, skinId, opts = {}) {
+  return new Promise((res) => { const run = () => res(renderHeroPortrait(heroId, skinId, opts)); (window.requestIdleCallback || ((f) => setTimeout(f, 0)))(run); });
+}

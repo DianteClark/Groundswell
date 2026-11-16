@@ -244,8 +244,8 @@ export class App {
         <div class="skins" data-scroll="skins">${skins.map(k => { const own = Save.owns('skin', k.id); return `<button class="skinb ${k.id === skinId ? 'on' : ''} ${own ? '' : 'locked'}" style="--rc:${rarityColor(k.rarity)}" data-act="pickSkin" data-k="${k.id}" title="${esc(k.name)}">${heroArtHTML(h.id, k.id, 'xs')}<span>${esc(k.name)}</span>${own ? '' : '<i class="lock">🔒</i>'}</button>`; }).join('')}</div>
         <div class="lbl">Loadout <button class="link" data-act="editLoadout">Edit in Armory ›</button></div>
         <div class="chips">${L.list.map((l, i) => `<button class="chip ${i === L.active ? 'on' : ''}" data-act="pickLoadout" data-i="${i}">${esc(l.name)}</button>`).join('')}</div>
-        ${this.loadoutSummaryHTML(lo)}
         ${this.jungleHint(h, lo)}
+        ${this.loadoutSummaryHTML(lo)}
       </section>
     </div>
     <div class="lockbar"><div class="lb-info">${heroChipHTML(h.id, 36)}<div><b>${esc(h.name)}</b><small>${esc(diffInfo(p.difficulty).name)} · ${esc(L.list[L.active]?.name || '')}</small></div></div><button class="btn primary lockin" data-act="lockIn">LOCK IN</button></div>`;

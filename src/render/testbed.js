@@ -3,7 +3,7 @@
 //   &inject=1 (spawn showcase summons/areas/projectiles near the local hero)  &zone=ember|flood|gale|stone (trigger living map)
 import * as THREE from 'three';
 import { Renderer } from './renderer.js';
-import { createHeroPreview } from './preview.js';
+import { createHeroPreview, renderHeroPortrait } from './preview.js';
 import { buildHero, poseRig } from './models/heroes.js';
 import { SKINS } from '../data/skins.js';
 import { Match } from '../sim/match.js';
@@ -16,6 +16,7 @@ const errs = []; window.__errs = errs; window.addEventListener('error', (e) => e
 
 if (mode === 'lineup') lineup();
 else if (mode === 'preview') previews();
+else if (mode === 'portraits') portraits();
 else game();
 
 function game() {
@@ -42,6 +43,13 @@ function game() {
   if (Q.get('inject')) inject(m, me);
   if (Q.get('zone')) { m._livingMap(0, { ember: 'ember', flood: 'tide', gale: 'gale', stone: 'stone' }[Q.get('zone')] || 'ember'); m.eventLog.push(...m.events.map((ev) => ({ tick: m.tickCount, ev }))); r.lastTick = m.tickCount - 1; }
   if (Q.get('nofog')) r.revealAll = true;
+  if (Q.get('demo')) {
+    me.level = 9; me.x = me.prevX = 100; me.y = me.prevY = 72;
+    const en = m.heroes.filter((h) => h.team !== me.team); en.forEach((e, i) => { e.x = e.prevX = 107 + i * 1.5; e.y = e.prevY = 73 + i * 2; });
+    const al = m.heroes.filter((h) => h.team === me.team && h !== me); al.forEach((e, i) => { e.x = e.prevX = 97 - i; e.y = e.prevY = 75 + i; });
+    const slots = (Q.get('slots') || 'q,w,r').split(','); let si = 0;
+    setInterval(() => { const t = en.find((e) => e.alive) || en[0]; if (t) { t.hp = t.maxHp; } const ally = al[0]; const slot = slots[si++ % slots.length]; const tgt = /pip/.test(me.heroId) && slot !== 'q' ? ally : t; me.hp = me.maxHp; for (const k in me.abilities) if (me.abilities[k]) { me.abilities[k].readyAt = 0; } m.issue(pid, { type: 'cast', slot, x: tgt.x, y: tgt.y, targetId: tgt.id }); }, +(Q.get('every') || 1600));
+  }
   let acc = 0, last = performance.now(); const speed = +(Q.get('speed') || 1); const freeze = Q.get('freeze');
   let frames = 0, fpsT = 0;
   const hud = document.createElement('div'); hud.style.cssText = 'position:fixed;left:8px;top:6px;font:12px monospace;opacity:.7'; document.body.appendChild(hud);
@@ -112,4 +120,12 @@ function previews() {
   document.body.appendChild(wrap);
   const list = [['lumi', 'lumi_celestial'], ['garrok', 'garrok_thunder'], ['pip', 'pip_galactic'], ['nyx', 'nyx_void'], ['bram', 'bram_magmaroot'], ['vex', 'vex_neon'], ['kaela', 'kaela_solar'], ['mire', 'mire_eclipse']];
   for (const [h, s] of list) { const d = document.createElement('div'); d.style.cssText = 'background:radial-gradient(#3a3460,#151225);border-radius:12px;min-height:0'; wrap.appendChild(d); createHeroPreview(d, h, s); }
+}
+
+function portraits() {
+  const wrap = document.createElement('div'); wrap.style.cssText = 'display:grid;grid-template-columns:repeat(8,1fr);gap:6px;padding:6px'; document.body.appendChild(wrap);
+  const t0 = performance.now(); let n = 0;
+  for (const s of SKINS) { const img = new Image(); img.src = renderHeroPortrait(s.heroId, s.id, { size: 160, pose: n % 2 ? 'action' : 'idle' }); img.style.cssText = 'width:100%;border-radius:10px'; wrap.appendChild(img); n++; }
+  const t1 = performance.now(); renderHeroPortrait('bram', 'bram_default', { size: 160 });
+  const info = document.createElement('div'); info.textContent = `${n} portraits in ${(t1 - t0).toFixed(0)}ms (cached re-request ${(performance.now() - t1).toFixed(1)}ms)`; document.body.appendChild(info); console.warn(info.textContent);
 }

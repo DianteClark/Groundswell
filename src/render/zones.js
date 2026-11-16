@@ -80,8 +80,8 @@ export class ZoneFx {
     this.group.scale.setScalar(Math.max(0.01, s));
     if (this.root.visible) {
       const t = this.t;
-      const hd = t < 0.5 ? Math.sin((t / 0.5) * PI / 2) * 2.6 : t < 0.9 ? 2.6 : 2.6 * Math.max(0, 1 - (t - 0.9) / 1.2); // swell then settle
-      this.dome.scale.y = Math.max(0.01, hd); this.dome.material.opacity = t < 1.8 ? 1 : Math.max(0, 1 - (t - 1.8) / 0.4); this.dome.visible = this.dome.material.opacity > 0.01;
+      const H = Math.min(2.4, this.r * 0.11); const hd = t < 0.5 ? Math.sin((t / 0.5) * PI / 2) * H : t < 0.9 ? H : H * Math.max(0, 1 - (t - 0.9) / 1.2); // swell then settle
+      this.dome.scale.y = Math.max(0.01, hd); this.dome.material.opacity = 0.7 * (t < 1.8 ? 1 : Math.max(0, 1 - (t - 1.8) / 0.4)); this.dome.material.depthWrite = false; this.dome.visible = this.dome.material.opacity > 0.01;
       for (const m of this.shards) { const k = Math.max(0, t - m.userData.d); const up = k < 0.25 ? Math.sin((k / 0.25) * PI / 2) : 1; const settle = this.keepShards ? 0.55 : Math.max(0, 1 - Math.max(0, k - 2.4) / 1.2); m.position.y = -3 + (3.3 * up) * (this.keepShards ? 1 - 0.45 * Math.min(1, Math.max(0, k - 1.6)) : settle); }
       if (vfx && t < 0.6) { const a = Math.random() * PI * 2; vfx.burst(this.x + Math.cos(a) * this.r, 0.3, this.z + Math.sin(a) * this.r, '#b8a888', 3, { style: 'dust', up: 2.5, size: 1.4 }); }
       if (!this.keepShards && t > 4) this.root.visible = false;
