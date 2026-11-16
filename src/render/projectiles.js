@@ -32,29 +32,31 @@ export function buildProjectile(key, color, color2) {
   const style = projStyle(key);
   const g = new THREE.Group(); const spin = new THREE.Group(); g.add(spin);
   const c1 = new THREE.Color(color), c2 = new THREE.Color(color2 || '#ffffff');
-  const glowM = makeGlowMat(c1); const coreM = makeGlowMat(c2);
+  const glowM = makeGlowMat(c1.clone().multiplyScalar(1.6)); const coreM = makeGlowMat(c2.clone().multiplyScalar(2.4));
+  const tracerM = new THREE.MeshBasicMaterial({ color: c1.clone().multiplyScalar(2.0), transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+  const tracer = (len, w) => { const m = new THREE.Mesh(sg('tracer', () => G.cone(1, 1, 6).rotateX(-PI / 2).translate(0, 0, -0.5)), tracerM); m.scale.set(w, w, len); g.add(m); return m; };
   let glowSize = 1.6, trail = { size: 0.6, life: 0.3, style: 'wisps' }, spinRate = 0, spinAxis = 'z';
   const add = (geo, mat, o = {}) => { const m = new THREE.Mesh(geo, mat); if (o.p) m.position.set(...o.p); if (o.r) m.rotation.set(...o.r); if (o.s) (typeof o.s === 'number' ? m.scale.setScalar(o.s) : m.scale.set(...o.s)); spin.add(m); return m; };
   switch (style) {
-    case 'crystal': add(sg('oct', () => G.oct(0.5)), glowM, { s: [0.7, 0.7, 1.6], r: [PI / 2, 0, 0] }); add(sg('oct', () => G.oct(0.5)), coreM, { s: [0.35, 0.35, 0.9], r: [PI / 2, 0, 0] }); glowSize = 3.2; trail = { size: 1.0, life: 0.35, style: 'stars' }; spinRate = 8; break;
+    case 'crystal': tracer(3, 0.4); add(sg('oct', () => G.oct(0.5)), glowM, { s: [0.7, 0.7, 1.6], r: [PI / 2, 0, 0] }); add(sg('oct', () => G.oct(0.5)), coreM, { s: [0.35, 0.35, 0.9], r: [PI / 2, 0, 0] }); glowSize = 3.2; trail = { size: 1.0, life: 0.35, style: 'stars' }; spinRate = 8; break;
     case 'orb_small': add(sg('ico0', () => G.ico(0.3, 1)), coreM, {}); glowSize = 1.4; trail = { size: 0.45, life: 0.2 }; break;
     case 'cannon': add(sg('ico0', () => G.ico(0.3, 1)), makeGlowMat('#3a3540'), { s: 1.6 }); glowSize = 1.8; trail = { size: 0.7, life: 0.35, style: 'embers' }; break;
     case 'orb_big': add(sg('ico1', () => G.ico(0.6, 1)), coreM, {}); glowSize = 4; trail = { size: 1.4, life: 0.4, style: 'embers' }; break;
-    case 'bolt': add(sg('bolt', () => G.cyl(0.08, 0.08, 1.6, 5).rotateX(PI / 2)), coreM, {}); glowSize = 1.2; trail = { size: 0.4, life: 0.15, style: 'sparks' }; break;
-    case 'bolt_big': add(sg('boltb', () => G.cyl(0.16, 0.16, 3.2, 6).rotateX(PI / 2)), coreM, {}); add(sg('boltg', () => G.cyl(0.32, 0.05, 3.6, 6).rotateX(PI / 2)), glowM, { p: [0, 0, -0.4] }); glowSize = 2.4; trail = { size: 0.8, life: 0.25, style: 'sparks' }; break;
-    case 'star': add(sg('star', () => G.star(0.55, 0.22, 0.12)), coreM, {}); add(sg('star2', () => G.star(0.8, 0.3, 0.06)), glowM, { p: [0, 0, -0.05] }); glowSize = 2.4; trail = { size: 0.7, life: 0.5, style: 'stars' }; spinRate = 10; break;
+    case 'bolt': add(sg('bolt', () => G.cyl(0.08, 0.08, 1.6, 5).rotateX(PI / 2)), coreM, {}); tracer(3.2, 0.16); glowSize = 1.4; trail = { size: 0.4, life: 0.15, style: 'sparks' }; break;
+    case 'bolt_big': add(sg('boltb', () => G.cyl(0.16, 0.16, 3.2, 6).rotateX(PI / 2)), coreM, {}); tracer(6, 0.35); add(sg('boltg', () => G.cyl(0.32, 0.05, 3.6, 6).rotateX(PI / 2)), glowM, { p: [0, 0, -0.4] }); glowSize = 2.4; trail = { size: 0.8, life: 0.25, style: 'sparks' }; break;
+    case 'star': tracer(2.2, 0.35); add(sg('star', () => G.star(0.55, 0.22, 0.12)), coreM, {}); add(sg('star2', () => G.star(0.8, 0.3, 0.06)), glowM, { p: [0, 0, -0.05] }); glowSize = 2.4; trail = { size: 0.7, life: 0.5, style: 'stars' }; spinRate = 10; break;
     case 'zap': add(sg('oct', () => G.oct(0.5)), coreM, { s: 0.6 }); glowSize = 1.5; trail = { size: 0.45, life: 0.2, style: 'lightning' }; spinRate = 15; spinAxis = 'y'; break;
     case 'zap_big': add(sg('oct', () => G.oct(0.5)), coreM, { s: 1.0 }); add(sg('tor', () => G.torus(0.6, 0.05, 3, 12)), glowM, {}); glowSize = 2.6; trail = { size: 0.7, life: 0.3, style: 'lightning' }; spinRate = 12; spinAxis = 'y'; break;
     case 'bubble': add(sg('ico1', () => G.ico(0.6, 1)), glowM, { s: 0.75 }); add(sg('ico0', () => G.ico(0.3, 1)), coreM, { p: [0.15, 0.15, 0.1], s: 0.5 }); glowSize = 2; trail = { size: 0.6, life: 0.5, style: 'bubbles' }; break;
     case 'crescent': add(sg('cres', () => G.torus(0.9, 0.14, 3, 12, PI).rotateX(PI / 2)), glowM, { r: [0, PI / 2, 0] }); add(sg('cres2', () => G.torus(0.9, 0.05, 3, 12, PI).rotateX(PI / 2)), coreM, { r: [0, PI / 2, 0] }); glowSize = 2.4; trail = { size: 0.8, life: 0.35, style: 'embers' }; break;
     case 'dagger': add(sg('dag', () => G.blade(0.9, 0.22, 0.05).rotateX(PI / 2)), coreM, {}); add(sg('dag2', () => G.blade(1.1, 0.36, 0.03).rotateX(PI / 2)), glowM, { p: [0, 0, -0.1] }); glowSize = 1.6; trail = { size: 0.6, life: 0.4, style: 'void' }; spinRate = 18; spinAxis = 'y'; break;
-    case 'spear': add(sg('spr', () => G.cyl(0.05, 0.05, 2.6, 4).rotateX(PI / 2)), makeGlowMat('#8a6a4a'), { p: [0, 0, -0.6] }); add(sg('sprh', () => G.cone(0.18, 0.7, 4).rotateX(PI / 2)), coreM, { p: [0, 0, 0.9] }); glowSize = 1.6; trail = { size: 0.5, life: 0.25, style: 'sparks' }; break;
+    case 'spear': tracer(2.4, 0.2); add(sg('spr', () => G.cyl(0.05, 0.05, 2.6, 4).rotateX(PI / 2)), makeGlowMat('#8a6a4a'), { p: [0, 0, -0.6] }); add(sg('sprh', () => G.cone(0.18, 0.7, 4).rotateX(PI / 2)), coreM, { p: [0, 0, 0.9] }); glowSize = 1.6; trail = { size: 0.5, life: 0.25, style: 'sparks' }; break;
     case 'rock': add(sg('rk', () => G.dodec(0.6)), makeGlowMat('#6a5a4a'), {}); glowSize = 1.8; trail = { size: 0.8, life: 0.4, style: 'leaves' }; spinRate = 6; spinAxis = 'x'; break;
     default: add(sg('ico1', () => G.ico(0.6, 1)), coreM, { s: 0.6 }); glowSize = 2.2; trail = { size: 0.7, life: 0.35 }; break;
   }
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: c1, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: c1.clone().multiplyScalar(1.6), transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
   sp.scale.set(glowSize, glowSize, 1); g.add(sp);
-  return { group: g, spin, spinRate, spinAxis, trail, style, mats: [glowM, coreM, sp.material], glow: sp };
+  return { group: g, spin, spinRate, spinAxis, trail, style, mats: [glowM, coreM, sp.material, tracerM], glow: sp };
 }
 
 // Ground area visual (non-zone). Ring + soft fill + rotating rune ring + particles handled by renderer.

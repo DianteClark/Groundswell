@@ -35,7 +35,7 @@ export function legs(R, d, o) {
   const tw = o.thighW ?? 0.3, sw = o.shinW ?? 0.26;
   for (const [s, sx] of [['L', 1], ['R', -1]]) {
     const T = 'thigh' + s, S = 'shin' + s, F = 'foot' + s;
-    R.add(T, G.tprism(tw * 1.05, tw * 1.05, tw * 0.85, tw * 0.85, d.thigh + 0.08, 7), o.pants, { p: [0, -d.thigh / 2, 0] });
+    R.add(T, G.tprism(tw * 0.86, tw * 0.86, tw * 1.08, tw * 1.08, d.thigh + 0.1, 7), o.pants, { p: [0, -d.thigh / 2, 0] });
     if (o.knee) R.add(S, G.cbox(sw * 1.1, sw * 0.9, sw * 0.6, 0.04), o.knee, { p: [0, 0.02, sw * 0.42], metal: o.kneeMetal ?? 0, rough: 0.5 });
     const bh = o.bootH ?? 0.62;
     R.add(S, G.tprism(sw * 0.85, sw * 0.85, sw * 0.75, sw * 0.75, d.shin * (1 - bh) + 0.05, 7), o.pants, { p: [0, -d.shin * (1 - bh) / 2, 0] });

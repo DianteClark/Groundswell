@@ -7,99 +7,9 @@ import { buildHero, poseRig } from './heroes.js';
 const PI = Math.PI;
 export const ELEMENT_COLORS = { ember: '#ff6a2a', tide: '#2fb0ff', gale: '#9ff5d8', stone: '#c9a46a', none: '#c080ff' };
 
-// ───────────────────────────── MINIONS (instanced) ─────────────────────────────
-function minionParts(type) {
-  const body = [], team = [], glow = [];
-  const metal = '#b8bec8', dark = '#3a3a44', skin = '#e8c09a', wood = '#7a5232';
-  if (type === 'minion_melee') {
-    team.push(prep(G.cyl(0.42, 0.5, 0.7, 6), '#ffffff', { p: [0, 0.75, 0] }));
-    body.push(prep(G.box(0.7, 0.12, 0.5), dark, { p: [0, 0.48, 0] }));
-    body.push(prep(G.ico(0.32, 0), skin, { p: [0, 1.3, 0.02] }));
-    body.push(prep(G.cyl(0.36, 0.36, 0.3, 7), metal, { p: [0, 1.42, 0] }));
-    body.push(prep(G.box(0.5, 0.06, 0.08), dark, { p: [0, 1.34, 0.32] }));
-    team.push(prep(G.cone(0.1, 0.4, 4), '#ffffff', { p: [0, 1.75, -0.05], r: [-0.3, 0, 0] }));
-    body.push(prep(G.cyl(0.12, 0.1, 0.45, 5), dark, { p: [0.18, 0.22, 0] }));
-    body.push(prep(G.cyl(0.12, 0.1, 0.45, 5), dark, { p: [-0.18, 0.22, 0] }));
-    body.push(prep(G.box(0.08, 0.9, 0.16), metal, { p: [-0.5, 1.0, 0.35], r: [0.6, 0, 0] }));
-    body.push(prep(G.box(0.3, 0.06, 0.1), dark, { p: [-0.5, 0.7, 0.12], r: [0.6, 0, 0] }));
-    team.push(prep(G.cyl(0.32, 0.32, 0.08, 6), '#ffffff', { p: [0.5, 0.85, 0.15], r: [0, 0, PI / 2] }));
-    body.push(prep(G.cyl(0.12, 0.12, 0.1, 6), metal, { p: [0.56, 0.85, 0.15], r: [0, 0, PI / 2] }));
-  } else if (type === 'minion_caster') {
-    team.push(prep(G.cone(0.48, 1.1, 6), '#ffffff', { p: [0, 0.6, 0] }));
-    body.push(prep(G.ico(0.28, 0), skin, { p: [0, 1.2, 0.02] }));
-    team.push(prep(G.cone(0.38, 0.65, 5), '#ffffff', { p: [0, 1.6, -0.05], r: [-0.25, 0, 0] }));
-    body.push(prep(G.cyl(0.46, 0.46, 0.05, 7), dark, { p: [0, 1.36, 0] }));
-    body.push(prep(G.box(0.4, 0.12, 0.3), '#d8d0c0', { p: [0, 1.05, 0.12] }));
-    body.push(prep(G.cyl(0.035, 0.04, 1.5, 4), wood, { p: [-0.42, 0.85, 0.1] }));
-    glow.push(prep(G.ico(0.16, 0), '#ffffff', { p: [-0.42, 1.68, 0.1] }));
-  } else {
-    body.push(prep(G.box(1.1, 0.5, 1.4), wood, { p: [0, 0.6, 0] }));
-    for (const [x, z] of [[0.62, 0.45], [-0.62, 0.45], [0.62, -0.45], [-0.62, -0.45]]) body.push(prep(G.cyl(0.32, 0.32, 0.14, 8), dark, { p: [x, 0.32, z], r: [0, 0, PI / 2] }));
-    body.push(prep(G.cyl(0.28, 0.36, 1.2, 7), '#4a4a55', { p: [0, 1.05, 0.35], r: [PI / 2 - 0.35, 0, 0] }));
-    body.push(prep(G.torus(0.3, 0.06, 4, 8), metal, { p: [0, 1.25, 0.9], r: [-0.35, 0, 0] }));
-    team.push(prep(G.box(0.04, 0.9, 0.04), '#ffffff', { p: [0.4, 1.3, -0.55] }));
-    team.push(prep(G.box(0.5, 0.35, 0.03), '#ffffff', { p: [0.15, 1.55, -0.55] }));
-    team.push(prep(G.box(1.15, 0.1, 1.45), '#ffffff', { p: [0, 0.88, 0] }));
-    glow.push(prep(G.cyl(0.2, 0.2, 0.05, 7), '#ffffff', { p: [0, 1.28, 0.92], r: [PI / 2 - 0.35, 0, 0] }));
-  }
-  return { body: mergeColored(body), team: mergeColored(team), glow: glow.length ? mergeColored(glow) : null };
-}
-
-const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
-
-export class MinionInstancer {
-  constructor(scene) {
-    this.scene = scene; this.types = {};
-    this.mat = makeToonMat({ rim: 0xffffff, rimStrength: 0.35 }); this.mat.userData.shared = true;
-    this.glowMat = makeGlowMat(0xffffff, { vertexColors: true }); this.glowMat.userData.shared = true;
-    for (const t of ['minion_melee', 'minion_caster', 'minion_siege']) {
-      const parts = minionParts(t); const cap = 48; const ms = {};
-      for (const k of ['body', 'team', 'glow']) {
-        if (!parts[k]) continue;
-        const m = new THREE.InstancedMesh(parts[k], k === 'glow' ? this.glowMat : this.mat, cap);
-        m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.count = 0; m.frustumCulled = false;
-        m.castShadow = k !== 'glow'; m.setColorAt(0, _c.set(1, 1, 1)); m.instanceColor.setUsage(THREE.DynamicDrawUsage);
-        scene.add(m); ms[k] = m;
-      }
-      this.types[t] = { ms, cap, n: 0, parts };
-    }
-  }
-  begin() { for (const t in this.types) this.types[t].n = 0; }
-  // o: {x,z,rot,scale,tilt,lift,flash,team, alpha}
-  push(type, o) {
-    const T = this.types[type] || this.types.minion_melee;
-    if (T.n >= T.cap) this._grow(T);
-    const i = T.n++;
-    _e.set(o.tiltX || 0, o.rot, o.tilt || 0, 'YXZ'); _q.setFromEuler(_e);
-    _m4.compose(_p.set(o.x, o.lift || 0, o.z), _q, _s.setScalar(o.scale ?? 1));
-    const tc = _c.set(teamColor(o.team));
-    for (const k in T.ms) {
-      const m = T.ms[k]; m.setMatrixAt(i, _m4);
-      if (k === 'body') { const f = 1 + (o.flash || 0) * 1.5; m.setColorAt(i, _c.setRGB(f, f, f)); }
-      else if (k === 'team') { _c.set(teamColor(o.team)); _c.multiplyScalar(1 + (o.flash || 0)); m.setColorAt(i, _c); }
-      else { _c.set(teamColor(o.team)).lerp(new THREE.Color(1, 1, 1), 0.35).multiplyScalar(1.4); m.setColorAt(i, _c); }
-    }
-  }
-  end() {
-    for (const t in this.types) {
-      const T = this.types[t];
-      for (const k in T.ms) { const m = T.ms[k]; m.count = T.n; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
-    }
-  }
-  _grow(T) {
-    const cap = T.cap * 2;
-    for (const k in T.ms) {
-      const old = T.ms[k]; const m = new THREE.InstancedMesh(old.geometry, old.material, cap);
-      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.frustumCulled = false; m.castShadow = old.castShadow;
-      m.setColorAt(0, _c.set(1, 1, 1));
-      for (let i = 0; i < T.cap; i++) { old.getMatrixAt(i, _m4); m.setMatrixAt(i, _m4); old.getColorAt(i, _c); m.setColorAt(i, _c); }
-      this.scene.remove(old); old.dispose(); this.scene.add(m); T.ms[k] = m;
-    }
-    T.cap = cap;
-  }
-  setShadows(on) { for (const t in this.types) for (const k in this.types[t].ms) if (k !== 'glow') this.types[t].ms[k].castShadow = on; }
-  dispose() { for (const t in this.types) for (const k in this.types[t].ms) { const m = this.types[t].ms[k]; this.scene.remove(m); m.geometry.dispose(); m.dispose(); } this.mat.dispose(); this.glowMat.dispose(); }
-}
+// ───────────────────────────── MINIONS → ./minions.js (GPU-animated instancer)
+export { MinionInstancer } from './minions.js';
+const _m4 = new THREE.Matrix4();
 
 // ───────────────────────────── TOWER / CORE ─────────────────────────────
 export function buildTower(team) {
@@ -180,47 +90,88 @@ function campBig() { // stoneback boar
 }
 function wyrm(element) {
   const ec = ELEMENT_COLORS[element] || ELEMENT_COLORS.none;
-  const body = new THREE.Color(ec).multiplyScalar(0.55).getStyle();
-  const belly = new THREE.Color(ec).lerp(new THREE.Color('#fff2d0'), 0.55).getStyle();
+  const C = (x) => new THREE.Color(x);
+  const body = C(ec).multiplyScalar(0.16).lerp(C('#2a2630'), 0.3).getStyle();
+  const body2 = C(ec).multiplyScalar(0.3).getStyle();
+  const belly = C(ec).lerp(C('#fff2d0'), 0.6).getStyle();
+  const horn = '#efe6d2';
   const R = new Rig();
-  R.bone('hips', 'root', [0, 2.2, 0]); R.bone('torso', 'hips'); R.bone('neck', 'torso', [0, 0.6, 1.6]); R.bone('head', 'neck', [0, 1.4, 1.0]);
-  R.bone('wingL', 'torso', [0.9, 0.8, 0.2]); R.bone('wingR', 'torso', [-0.9, 0.8, 0.2]); R.bone('tail', 'torso', [0, 0, -1.8]);
-  for (const [n, x, z] of [['legFL', 0.9, 0.9], ['legFR', -0.9, 0.9], ['legBL', 0.9, -0.9], ['legBR', -0.9, -0.9]]) { R.bone(n, 'hips', [x, 0, z]); R.add(n, G.cyl(0.32, 0.22, 2.0, 5), body, { p: [0, -1.0, 0] }); R.add(n, G.box(0.5, 0.2, 0.6), body, { p: [0, -2.05, 0.15] }); }
-  R.add('torso', G.ico(1.4, 0), body, { s: [1.0, 0.85, 1.6] });
-  R.add('torso', G.ico(1.1, 0), belly, { p: [0, -0.35, 0.2], s: [0.9, 0.6, 1.4] });
-  for (let i = 0; i < 5; i++) R.add('torso', G.cone(0.22, 0.6, 4), ec, { p: [0, 1.2 - Math.abs(i - 2) * 0.1, -1.2 + i * 0.6], r: [-0.3, 0, 0], glow: true });
-  R.add('neck', G.cyl(0.45, 0.65, 1.8, 6), body, { p: [0, 0.6, 0.4], r: [0.6, 0, 0] });
-  R.add('head', G.ico(0.7, 0), body, { s: [0.9, 0.75, 1.1] });
-  R.add('head', G.box(0.8, 0.45, 1.0), body, { p: [0, -0.15, 0.75] });
-  R.add('head', G.box(0.7, 0.18, 0.9), belly, { p: [0, -0.42, 0.7] });
-  for (const sx of [1, -1]) { R.add('head', G.cone(0.14, 1.1, 4), '#f0e8d0', { p: [sx * 0.35, 0.55, -0.4], r: [-1.0, 0, -sx * 0.3] }); R.add('head', G.box(0.2, 0.1, 0.1), ec, { p: [sx * 0.3, 0.12, 0.5], glow: true }); }
-  for (const [w, sx] of [['wingL', 1], ['wingR', -1]]) {
-    R.add(w, G.cyl(0.08, 0.12, 2.6, 4), body, { p: [sx * 1.2, 0.6, 0], r: [0, 0, -sx * 1.1] });
-    const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(sx * 2.6, 1.3); sh.lineTo(sx * 3.0, -0.6); sh.lineTo(sx * 1.6, -0.9); sh.lineTo(sx * 0.4, -0.5);
-    const g = new THREE.ShapeGeometry(sh); g.rotateX(PI / 2);
-    R.add(w, g, ec, { p: [0, 0.4, 0], r: [0, 0, 0] });
-    R.add(w, g.clone(), ec, { p: [0, 0.38, 0], r: [PI, 0, 0] });
+  R.bone('hips', 'root', [0, 2.3, -0.4]); R.bone('torso', 'hips', [0, 0.1, 1.2]);
+  R.bone('neck', 'torso', [0, 0.6, 1.2], [0.35, 0, 0]); R.bone('neck2', 'neck', [0, 1.1, 0.7], [0.25, 0, 0]); R.bone('head', 'neck2', [0, 0.8, 0.6], [-0.55, 0, 0]); R.bone('jaw', 'head', [0, -0.3, 0.3]);
+  R.bone('wingL', 'torso', [0.85, 0.85, 0.1]); R.bone('wingR', 'torso', [-0.85, 0.85, 0.1]); R.bone('wingL2', 'wingL', [2.4, 0.9, -0.3]); R.bone('wingR2', 'wingR', [-2.4, 0.9, -0.3]);
+  R.bone('tail', 'hips', [0, 0, -1.2]); R.bone('tail2', 'tail', [0, -0.2, -1.8]); R.bone('tail3', 'tail2', [0, -0.15, -1.6]);
+  for (const [n, par, x, z] of [['legFL', 'torso', 0.95, 0.5], ['legFR', 'torso', -0.95, 0.5], ['legBL', 'hips', 1.0, -0.2], ['legBR', 'hips', -1.0, -0.2]]) {
+    R.bone(n, par, [x, -0.2, z]); R.bone(n + 'b', n, [0, -1.1, 0.15]);
+    R.add(n, G.tprism(0.55, 0.6, 0.75, 0.8, 1.3, 7), body2, { p: [0, -0.5, 0] });
+    R.add(n + 'b', G.tprism(0.38, 0.42, 0.45, 0.48, 1.0, 6), body, { p: [0, -0.45, 0] });
+    R.add(n + 'b', G.cbox(0.62, 0.22, 0.78, 0.06), body, { p: [0, -1.0, 0.18] });
+    for (let i = -1; i <= 1; i++) R.add(n + 'b', G.cone(0.07, 0.35, 4), horn, { p: [i * 0.2, -1.05, 0.62], r: [PI / 2, 0, 0] });
   }
-  R.add('tail', G.cone(0.6, 3.2, 6), body, { p: [0, 0, -1.4], r: [-PI / 2 - 0.15, 0, 0] });
-  R.add('tail', G.oct(0.4), ec, { p: [0, -0.5, -3.0], s: [0.5, 1, 1.4], glow: true });
-  return { R, height: 7.5, scale: 1.4, rim: ec };
+  R.add('hips', G.ico(1.15, 1), body, { s: [1.05, 0.95, 1.2] });
+  R.add('torso', G.ico(1.35, 1), body, { s: [1.0, 0.95, 1.25] });
+  R.add('torso', G.ico(1.05, 1), belly, { p: [0, -0.45, 0.3], s: [0.85, 0.6, 1.25] });
+  for (let i = 0; i < 9; i++) R.add(i < 5 ? 'torso' : 'hips', G.gem(0.2, 0.75 - Math.abs(i - 4) * 0.05, 4), ec, { p: [0, i < 5 ? 1.3 - Math.abs(i - 2) * 0.05 : 1.05, i < 5 ? 0.9 - i * 0.45 : 0.5 - (i - 5) * 0.4], r: [-0.4, 0, 0], glow: 1.1 });
+  R.add('neck', G.tprism(1.0, 1.0, 0.8, 0.8, 1.4, 7), body, { p: [0, 0.55, 0.3], r: [0.55, 0, 0] });
+  R.add('neck', G.tprism(0.55, 0.4, 0.45, 0.35, 1.3, 7), belly, { p: [0, 0.45, 0.62], r: [0.55, 0, 0] });
+  R.add('neck2', G.tprism(0.78, 0.78, 0.66, 0.66, 1.1, 7), body, { p: [0, 0.4, 0.25], r: [0.6, 0, 0] });
+  for (let i = 0; i < 3; i++) R.add(i < 2 ? 'neck' : 'neck2', G.gem(0.14, 0.5, 4), ec, { p: [0, 0.9 - i * 0.2, -0.05], r: [-0.6, 0, 0], glow: 1.1 });
+  // head
+  R.bone('headS', 'head', [0, 0, 0]);
+  R.add('head', G.cbox(1.15, 0.8, 1.25, 0.15), body, { p: [0, 0.05, 0.1] });
+  R.add('head', G.tbox(0.9, 0.8, 0.6, 0.5, 1.0), body2, { p: [0, 0.0, 0.95], r: [PI / 2, 0, 0] });
+  R.add('head', G.cbox(0.75, 0.12, 0.85, 0.04), belly, { p: [0, -0.28, 0.95] });
+  R.sym('head', G.cbox(0.24, 0.12, 0.08, 0.03), ec, { p: [0.36, 0.2, 0.6], r: [0, 0.4, -0.3], glow: 2.2 });
+  R.sym('head', G.horn(1.4, 0.13, 0.55, 5, 5), horn, { p: [0.36, 0.3, -0.3], r: [-1.2, 0, -0.35] });
+  R.sym('head', G.horn(0.7, 0.08, 0.5, 4, 4), horn, { p: [0.5, 0.0, -0.2], r: [-1.5, 0, -0.9] });
+  for (let i = 0; i < 4; i++) R.sym('head', G.cone(0.05, 0.22, 3), '#ffffff', { p: [0.3 - i * 0.02, -0.28, 0.6 + i * 0.25], r: [PI, 0, 0] });
+  R.add('jaw', G.tbox(0.75, 0.75, 0.5, 0.45, 1.1), body2, { p: [0, -0.05, 0.7], r: [PI / 2, 0, 0] });
+  R.add('jaw', G.cbox(0.6, 0.06, 0.9, 0.02), C(ec).lerp(C('#ffffff'), 0.4).getStyle(), { p: [0, 0.18, 0.75], glow: 1.4 });
+  // wings: bones + membranes
+  const memb = C(ec).multiplyScalar(0.45).getStyle();
+  for (const [w, w2, sx] of [['wingL', 'wingL2', 1], ['wingR', 'wingR2', -1]]) {
+    R.add(w, G.tube([[0, 0, 0], [sx * 1.3, 0.6, -0.1], [sx * 2.4, 0.9, -0.3]], 0.2, 0.12, 5, 4), body, {});
+    R.add(w, G.fan([[0, 0, -0.2], [sx * 2.4, 0.9, -0.3], [sx * 2.1, 0.3, -1.3], [sx * 1.2, 0.0, -1.7], [sx * 0.3, -0.1, -1.4]]), memb, { glow: 0.2, rough: 0.6 });
+    R.add(w2, G.tube([[0, 0, 0], [sx * 1.4, 0.5, -0.2], [sx * 2.7, 0.2, -0.6]], 0.12, 0.05, 5, 4), body, {});
+    R.add(w2, G.fan([[0, 0, 0], [sx * 2.7, 0.2, -0.6], [sx * 2.2, -0.2, -1.5], [sx * 1.2, -0.5, -1.9], [sx * -0.3, -0.9, -1.0]]), memb, { glow: 0.2, rough: 0.6 });
+    R.add(w2, G.cone(0.09, 0.55, 4), horn, { p: [sx * 2.7, 0.2, -0.6], r: [0, 0, -sx * 1.3] });
+  }
+  R.add('tail', G.tprism(1.0, 1.0, 0.7, 0.7, 1.9, 7), body, { p: [0, -0.1, -0.9], r: [-PI / 2 - 0.1, 0, 0] });
+  R.add('tail2', G.tprism(0.66, 0.66, 0.4, 0.4, 1.7, 6), body, { p: [0, -0.07, -0.8], r: [-PI / 2 - 0.1, 0, 0] });
+  R.add('tail3', G.tprism(0.38, 0.38, 0.12, 0.12, 1.5, 6), body, { p: [0, 0, -0.7], r: [-PI / 2, 0, 0] });
+  R.add('tail3', G.gem(0.45, 1.2, 4, 0.4), ec, { p: [0, 0, -1.5], r: [-PI / 2, 0, 0], s: [0.4, 1, 1], glow: 1.4 });
+  R.bone('mouth', 'head', [0, -0.2, 1.5]);
+  return { R, height: 8.5, scale: 1.25, rim: ec, kind: 'wyrm' };
 }
 function colossus() {
   const R = new Rig();
-  const rock = '#7a7088', rock2 = '#5a5268', glow = '#c07aff';
-  R.bone('hips', 'root', [0, 3.0, 0]); R.bone('torso', 'hips'); R.bone('head', 'torso', [0, 3.0, 0.6]);
-  R.bone('armL', 'torso', [2.4, 2.6, 0]); R.bone('armR', 'torso', [-2.4, 2.6, 0]);
-  R.bone('legL', 'hips', [1.0, 0, 0]); R.bone('legR', 'hips', [-1.0, 0, 0]);
-  R.add('torso', G.dodec(2.2), rock, { p: [0, 1.6, 0], s: [1.15, 1.0, 0.85] });
-  R.add('torso', G.dodec(1.3), rock2, { p: [0, 2.9, -0.5] });
-  R.add('torso', G.oct(0.7), glow, { p: [0, 1.7, 1.6], s: [0.7, 1, 0.5], glow: true });
-  for (let i = 0; i < 4; i++) R.add('torso', G.oct(0.35), glow, { p: [Math.cos(i * 1.6) * 1.8, 2.8 + (i % 2) * 0.4, -0.8], s: [0.6, 1.6, 0.6], glow: true });
-  for (const sx of [1, -1]) R.add('torso', G.dodec(1.0), rock2, { p: [sx * 2.1, 2.9, 0] });
-  R.add('head', G.dodec(0.8), rock, { s: [1.1, 0.8, 1] });
-  R.add('head', G.box(0.9, 0.15, 0.1), glow, { p: [0, 0.05, 0.72], glow: true });
-  for (const [a, sx] of [['armL', 1], ['armR', -1]]) { R.add(a, G.dodec(0.75), rock2, { p: [sx * 0.2, -1.0, 0] }); R.add(a, G.dodec(0.85), rock, { p: [sx * 0.3, -2.4, 0.2] }); R.add(a, G.dodec(1.05), rock2, { p: [sx * 0.3, -3.6, 0.3] }); R.add(a, G.oct(0.25), glow, { p: [sx * 0.6, -2.4, 0.6], glow: true }); }
-  for (const l of ['legL', 'legR']) { R.add(l, G.dodec(0.85), rock2, { p: [0, -1.2, 0] }); R.add(l, G.box(1.3, 0.8, 1.6), rock, { p: [0, -2.6, 0.2] }); }
-  return { R, height: 8.5, rim: glow };
+  const rock = '#7a7088', rock2 = '#5a5268', moss = '#6a8a4a', glow = '#c07aff';
+  R.bone('hips', 'root', [0, 3.2, 0]); R.bone('spine', 'hips', [0, 0.3, 0]); R.bone('torso', 'spine', [0, 0.6, 0]); R.bone('head', 'torso', [0, 3.0, 0.9]);
+  for (const [s, sx] of [['L', 1], ['R', -1]]) {
+    R.bone('arm' + s, 'torso', [sx * 2.6, 2.5, 0]); R.bone('fore' + s, 'arm' + s, [sx * 0.2, -2.0, 0.2]); R.bone('fist' + s, 'fore' + s, [0, -1.8, 0.3]);
+    R.bone('leg' + s, 'hips', [sx * 1.1, 0, 0]); R.bone('shin' + s, 'leg' + s, [0, -1.6, 0.1]);
+  }
+  R.add('hips', G.dodec(1.5), rock2, { s: [1.3, 0.8, 1.0] });
+  R.add('torso', G.dodec(2.3), rock, { p: [0, 1.5, 0], s: [1.2, 1.0, 0.85] });
+  R.add('torso', G.dodec(1.4), rock2, { p: [0, 2.8, -0.6] });
+  R.add('torso', G.ico(1.6, 1), moss, { p: [0, 3.3, -0.4], s: [1.6, 0.4, 1.2] });
+  R.add('torso', G.gem(0.75, 1.8, 6, 0.5), glow, { p: [0, 1.6, 1.85], s: [1, 1, 0.5], glow: 1.6 });
+  for (let i = 0; i < 6; i++) { const a = i * 1.1 - 2.7; R.add('torso', G.cbox(0.12, 1.2 + (i % 2) * 0.5, 0.1, 0.02), glow, { p: [Math.sin(a) * 2.2, 1.3 + (i % 3) * 0.4, Math.cos(a) * 1.7], r: [0, a, 0.5 * ((i % 3) - 1)], glow: 1.3 }); }
+  for (let i = 0; i < 5; i++) R.add('torso', G.gem(0.35, 1.4 + (i % 2) * 0.6, 5, 0.3), glow, { p: [Math.cos(i * 1.4) * 1.6, 3.2 + (i % 2) * 0.3, -0.9 - Math.sin(i * 1.4) * 0.4], r: [-0.3, 0, Math.cos(i * 1.4) * 0.4], glow: 1.2 });
+  for (const sx of [1, -1]) R.add('torso', G.dodec(1.1), rock2, { p: [sx * 2.3, 2.9, 0] });
+  R.add('head', G.dodec(0.9), rock, { s: [1.15, 0.85, 1.05] });
+  R.add('head', G.cbox(1.3, 0.28, 0.5, 0.08), rock2, { p: [0, 0.3, 0.55] });
+  R.sym('head', G.cbox(0.28, 0.14, 0.08, 0.03), glow, { p: [0.3, 0.05, 0.85], glow: 2.4 });
+  for (const [s, sx] of [['L', 1], ['R', -1]]) {
+    R.add('arm' + s, G.dodec(0.85), rock2, { p: [sx * 0.15, -1.0, 0] });
+    R.add('fore' + s, G.dodec(0.95), rock, { p: [0, -0.9, 0.1] });
+    R.add('fore' + s, G.gem(0.25, 0.8, 4), glow, { p: [sx * 0.6, -0.9, 0.5], glow: 1.4 });
+    R.add('fist' + s, G.dodec(1.15), rock2, { s: [1.1, 1, 1.1] });
+    for (let k = -1; k <= 1; k++) R.add('fist' + s, G.cbox(0.4, 0.4, 0.4, 0.08), rock, { p: [k * 0.45, -0.7, 0.6] });
+    R.add('leg' + s, G.dodec(0.95), rock2, { p: [0, -0.8, 0] });
+    R.add('shin' + s, G.cbox(1.5, 1.0, 1.9, 0.2), rock, { p: [0, -1.1, 0.25] });
+  }
+  R.bone('slamL', 'fistL', [0, -1, 0]);
+  return { R, height: 10.5, scale: 1.0, rim: glow, kind: 'colossus' };
 }
 const MONSTERS = { camp_small: campSmall, camp_big: campBig, wyrm, colossus };
 
@@ -228,7 +179,7 @@ export function buildMonster(model, element) {
   const f = MONSTERS[model] || campSmall;
   const def = f(element);
   const rig = def.R.build({ rim: def.rim || '#ffffff', rimStrength: 0.4 });
-  rig.def = { style: 'monster', height: def.height };
+  rig.def = { style: 'monster', height: def.height * (def.scale || 1), kind: def.kind || model };
   if (def.scale) { const outer = new THREE.Group(); outer.add(rig.root); outer.scale.setScalar(def.scale); rig.outer = outer; }
   return rig;
 }
@@ -238,6 +189,8 @@ export function poseMonster(rig, anim, time, moving) {
   for (const k in b) { const r = b[k].userData.rest; if (!r) continue; b[k].position.copy(r.p); b[k].rotation.copy(r.r); b[k].scale.copy(r.s); }
   let st = anim?.state || 'idle'; const at = anim?.t || 0; if (st === 'idle' && moving) st = 'run';
   const legs = ['legFL', 'legFR', 'legBL', 'legBR'].filter((n) => b[n]);
+  if (b.tail2) { b.tail2.rotation.y = Math.sin(time * 1.1) * 0.25; b.tail3.rotation.y = Math.sin(time * 1.1 - 0.6) * 0.35; }
+  if (b.wingL2) { const f = st === 'attack' ? 6 : 1.4; b.wingL2.rotation.z = Math.sin(time * f - 0.5) * 0.3; b.wingR2.rotation.z = -Math.sin(time * f - 0.5) * 0.3; }
   if (b.wingL) { const f = st === 'attack' || st === 'cast' ? 6 : 1.6; b.wingL.rotation.z = Math.sin(time * f) * 0.35 + 0.1; b.wingR.rotation.z = -Math.sin(time * f) * 0.35 - 0.1; }
   if (b.tail) b.tail.rotation.y = Math.sin(time * 1.3) * 0.3;
   if (st === 'run') {
@@ -246,11 +199,22 @@ export function poseMonster(rig, anim, time, moving) {
     if (b.legL) { b.legL.rotation.x = s * 0.5; b.legR.rotation.x = -s * 0.5; b.armL.rotation.x = -s * 0.4; b.armR.rotation.x = s * 0.4; }
     b.hips.position.y += Math.abs(Math.cos(ph)) * 0.1;
   } else if (st === 'attack') {
-    const k = clamp(at / 0.5, 0, 1), r = Math.sin(k * PI);
-    b.hips.position.z += r * 0.5; b.torso.rotation.x = -r * 0.2 + ease((k - 0.5) * 2) * 0.3 * (1 - ease((k - 0.8) * 5));
-    if (b.head) b.head.rotation.x = -0.4 * r + 0.3 * ease((k - 0.5) * 2) * (1 - k);
-    if (b.neck) b.neck.rotation.x = -0.3 * r + 0.5 * ease((k - 0.45) * 3) * (1 - ease((k - 0.8) * 5));
-    if (b.armL) { const up = k < 0.5 ? ease(k * 2) : 1 - ease((k - 0.5) * 3); b.armL.rotation.x = -2.4 * up; b.armR.rotation.x = -2.4 * up; }
+    const kind = rig.def.kind; const per = Math.max(0.5, Math.min(2.5, anim?.dur || 1)); const wind = Math.max(0.12, Math.min(0.6, per * 0.35));
+    const w = ease(at / wind), sk = ease((at - wind) / 0.1), rec = ease((at - wind - 0.15) / 0.4); const env = (1 - rec);
+    if (kind === 'wyrm') { // rear back, then breathe
+      const up = w * (1 - sk); const out = sk * env;
+      b.neck.rotation.x += -0.5 * up + 0.35 * out; b.neck2.rotation.x += -0.4 * up + 0.3 * out; b.head.rotation.x += 0.3 * up - 0.25 * out; b.jaw.rotation.x += 0.15 * up + 0.75 * out;
+      b.torso.rotation.x += -0.15 * up + 0.06 * out; b.hips.position.y += 0.3 * up; if (b.wingL) { b.wingL.rotation.z += 0.6 * up; b.wingR.rotation.z -= 0.6 * up; }
+    } else if (kind === 'colossus') { // double-fist overhead slam
+      const up = w * (1 - sk); const down = sk * env;
+      for (const [s2, sx] of [['L', 1], ['R', -1]]) { b['arm' + s2].rotation.x += -2.6 * up - 0.9 * down; b['arm' + s2].rotation.z += -sx * 0.5 * up; b['fore' + s2].rotation.x += -0.6 * up; }
+      b.torso.rotation.x += -0.25 * up + 0.45 * down; b.hips.position.y += -0.6 * down; b.head.rotation.x += -0.2 * up;
+    } else {
+      const r = Math.sin(clamp(at / per, 0, 1) * PI);
+      b.hips.position.z += (w * (1 - sk) * -0.3 + sk * env * 0.6); b.torso.rotation.x = -0.25 * w * (1 - sk) + 0.2 * sk * env;
+      if (b.head) b.head.rotation.x = -0.4 * w * (1 - sk) + 0.4 * sk * env;
+      legs.forEach((n, i) => { if (i < 2) b[n].rotation.x += -0.7 * sk * env; });
+    }
   } else if (st === 'dead') {
     const k = ease(at / 0.8);
     b.hips.position.y *= 1 - 0.55 * k; b.torso.rotation.z = 0.35 * k; legs.forEach((n, i) => { b[n].rotation.z = (i % 2 ? -1 : 1) * 0.9 * k; });

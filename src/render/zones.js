@@ -1,7 +1,22 @@
 // Living-map zone visuals (flood / ember / gale / stone / swamp) + telegraphs.
 import * as THREE from 'three';
 import { makeWaterMat } from './map.js';
-import { ringTexture, thinRingTexture, glowTexture, teamColor, mkRand } from './util.js';
+import { ringTexture, thinRingTexture, glowTexture, teamColor, mkRand, WORLD, makeWorldMat } from './util.js';
+
+// vertical energy curtain around a zone border (additive, fades upward, scrolling streaks)
+function curtain(r, color, h = 3.2) {
+  const g = new THREE.CylinderGeometry(r, r, h, 64, 1, true); g.translate(0, h / 2, 0);
+  const m = new THREE.ShaderMaterial({ uniforms: { uColor: { value: new THREE.Color(color) }, uTime: WORLD.uTime, uA: { value: 0.5 } },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+    fragmentShader: `uniform vec3 uColor; uniform float uTime; uniform float uA; varying vec2 vUv;
+      void main(){ float st = 0.6 + 0.4 * sin(vUv.x * 160.0 + uTime * 2.0) * sin(vUv.x * 47.0 - uTime * 1.3);
+        float y = clamp(vUv.y, 0.0, 1.0); float a = pow(1.0 - y, 2.2) * st * uA + (1.0 - smoothstep(0.0, 0.06, y)) * uA * 0.6;
+        gl_FragColor = vec4(uColor * a * 0.55, a);
+        #include <colorspace_fragment>
+      }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const mesh = new THREE.Mesh(g, m); mesh.renderOrder = 13; return mesh;
+}
 
 const PI = Math.PI;
 export const ZONE_COLORS = { flood: '#3fb8ff', ember: '#ff6a1a', gale: '#bff8e8', stone: '#c9a46a', swamp: '#7aa83a' };
@@ -67,12 +82,16 @@ export class ZoneFx {
     this.group.scale.setScalar(0.01);
     // "ground swell" upheaval: a dome of earth heaves up then settles, ring of shards erupts at the rim
     const dg = new THREE.SphereGeometry(1, 18, 7, 0, PI * 2, 0, PI / 2); { const pa = dg.attributes.position; for (let i = 0; i < pa.count; i++) { const y = pa.getY(i); const n = 1 + 0.08 * Math.sin(pa.getX(i) * 9.0) * Math.cos(pa.getZ(i) * 7.0); pa.setXYZ(i, pa.getX(i) * n, y * (0.85 + 0.3 * Math.abs(Math.sin(i * 12.9898))), pa.getZ(i) * n); } dg.computeVertexNormals(); }
-    const dome = new THREE.Mesh(dg, new THREE.MeshLambertMaterial({ color: new THREE.Color('#5f9e48').lerp(new THREE.Color(col), 0.25), flatShading: true, transparent: true }));
+    const dome = new THREE.Mesh(dg, new THREE.MeshLambertMaterial({ color: new THREE.Color('#7a8a52').lerp(new THREE.Color(col), 0.3), flatShading: true, transparent: true, opacity: 0.5, depthWrite: false }));
     dome.scale.set(r, 0.01, r); this.dome = dome; this.root = new THREE.Group(); this.root.position.set(x, 0, z); this.root.add(dome);
-    const shardGeo = new THREE.ConeGeometry(0.9, 3.2, 4, 1); const shardMat = new THREE.MeshLambertMaterial({ color: kind === 'stone' ? '#a49a8a' : new THREE.Color('#8a7a68').lerp(new THREE.Color(col), 0.25), flatShading: true });
+    const shardGeo = new THREE.ConeGeometry(0.9, 3.2, 4, 1); const shardMat = makeWorldMat({ vertexColors: false, color: kind === 'stone' ? '#b3a690' : new THREE.Color('#8a7a68').lerp(new THREE.Color(col), 0.3), roughness: 0.85, emissive: kind === 'ember' ? '#ff4a10' : 0x000000, emissiveIntensity: kind === 'ember' ? 0.6 : 0 });
     this.shards = [];
     const n = 18; for (let i = 0; i < n; i++) { const a = (i / n) * PI * 2 + Math.random() * 0.2; const m = new THREE.Mesh(shardGeo, shardMat); const rr = r * (0.92 + Math.random() * 0.12); m.position.set(Math.cos(a) * rr, -3, Math.sin(a) * rr); m.rotation.set(Math.sin(a) * 0.35, Math.random() * 3, -Math.cos(a) * 0.35); m.scale.setScalar(0.7 + Math.random() * 0.7); m.userData.d = Math.random() * 0.25; m.castShadow = true; this.root.add(m); this.shards.push(m); }
     this.keepShards = kind === 'stone';
+    // energy curtain marks the transformed zone (readable from anywhere on screen)
+    this.wall = curtain(r * 1.0, col, kind === 'gale' ? 4.5 : 3.0); this.wall.material.uniforms.uA.value = 0; this.group.add(this.wall);
+    this.teamWall = curtain(r * 1.025, teamColor(team), 0.9); this.teamWall.material.uniforms.uA.value = 0; this.group.add(this.teamWall);
+    if (kind === 'finalswell') { this.group.visible = false; this.root.visible = false; }
   }
   attach(scene) { scene.add(this.group); scene.add(this.root); }
   update(dt, time, vfx, intensity = 1) {
@@ -81,7 +100,7 @@ export class ZoneFx {
     if (this.root.visible) {
       const t = this.t;
       const H = Math.min(2.4, this.r * 0.11); const hd = t < 0.5 ? Math.sin((t / 0.5) * PI / 2) * H : t < 0.9 ? H : H * Math.max(0, 1 - (t - 0.9) / 1.2); // swell then settle
-      this.dome.scale.y = Math.max(0.01, hd); this.dome.material.opacity = 0.7 * (t < 1.8 ? 1 : Math.max(0, 1 - (t - 1.8) / 0.4)); this.dome.material.depthWrite = false; this.dome.visible = this.dome.material.opacity > 0.01;
+      this.dome.scale.y = Math.max(0.01, hd * 0.6); this.dome.material.opacity = 0.35 * (t < 0.9 ? 1 : Math.max(0, 1 - (t - 0.9) / 0.4)); this.dome.visible = this.dome.material.opacity > 0.01;
       for (const m of this.shards) { const k = Math.max(0, t - m.userData.d); const up = k < 0.25 ? Math.sin((k / 0.25) * PI / 2) : 1; const settle = this.keepShards ? 0.55 : Math.max(0, 1 - Math.max(0, k - 2.4) / 1.2); m.position.y = -3 + (3.3 * up) * (this.keepShards ? 1 - 0.45 * Math.min(1, Math.max(0, k - 1.6)) : settle); }
       if (vfx && t < 0.6) { const a = Math.random() * PI * 2; vfx.burst(this.x + Math.cos(a) * this.r, 0.3, this.z + Math.sin(a) * this.r, '#b8a888', 3, { style: 'dust', up: 2.5, size: 1.4 }); }
       if (!this.keepShards && t > 4) this.root.visible = false;
@@ -90,6 +109,7 @@ export class ZoneFx {
     const rnd = () => { const a = Math.random() * PI * 2, rr = Math.sqrt(Math.random()) * r * s; return [x + Math.cos(a) * rr, z + Math.sin(a) * rr]; };
     if (this.water) { this.water.material.uniforms.uTime.value = time; this.water.material.uniforms.uRise.value = s; }
     if (this.cracks) this.cracks.material.opacity = 0.6 + 0.4 * Math.sin(time * 2.2);
+    if (this.wall) { const pulse = this.t < 1.5 ? Math.max(0, 1 - this.t / 1.5) : 0; this.wall.material.uniforms.uA.value = (0.3 + 0.08 * Math.sin(time * 2.0)) * s + pulse * 1.2; this.wall.scale.y = 1 + pulse * 1.5; this.teamWall.material.uniforms.uA.value = 0.6 * s; }
     if (this.swirl) { this.swirl.rotation.y = time * 0.9; this.swirl2.rotation.y = -time * 1.4; }
     this.border.material.opacity = 0.35 + 0.15 * Math.sin(time * 2);
     if (!vfx) return;
@@ -115,6 +135,9 @@ export class TelegraphFx {
     this.fill = decal(ringTexture(), r * 2, { additive: true, color: col, opacity: 0.3, order: 6 }); this.fill.position.y = 0.14; this.group.add(this.fill);
     this.team = decal(thinRingTexture(), r * 2.12, { additive: true, color: teamColor(team), opacity: 0.6, order: 6 }); this.team.position.y = 0.16; this.group.add(this.team);
     this.r = r; this.x = x; this.z = z; this.col = col; this.done = false; this.start = null;
+    this.wall = curtain(r, col, 4); this.wall.material.uniforms.uA.value = 0; this.group.add(this.wall);
+    this.cr = decal(zoneTexture('ember_cracks'), r * 2, { additive: true, color: col, opacity: 0, order: 5 }); this.cr.position.y = 0.06; this.group.add(this.cr);
+    if (kind === 'finalswell') this.group.visible = false;
   }
   update(dt, time, simTime, vfx) {
     if (this.start == null) this.start = simTime;
@@ -122,6 +145,8 @@ export class TelegraphFx {
     const pulse = 0.5 + 0.5 * Math.sin(time * (6 + k * 14));
     this.ring.material.opacity = 0.3 + 0.35 * pulse; this.fill.scale.setScalar(Math.max(0.02, k)); this.fill.material.opacity = 0.1 + 0.12 * pulse; this.team.material.opacity = 0.35;
     this.team.rotation.y = time * 0.5;
+    this.wall.material.uniforms.uA.value = (0.25 + 0.9 * k) * (0.7 + 0.3 * pulse); this.wall.scale.y = 0.3 + 0.9 * k;
+    this.cr.material.opacity = k * k * (0.5 + 0.5 * pulse); this.cr.rotation.y = 0.3;
     if (vfx && Math.random() < dt * 20) { const a = Math.random() * PI * 2; vfx.trail(this.x + Math.cos(a) * this.r, 0.2, this.z + Math.sin(a) * this.r, this.col, { vy: 3, life: 0.8, size: 0.6, shape: 2 }); }
     // the ground is swelling: inward ripples quicken, dirt hops as it rumbles
     this.rip = (this.rip || 0) - dt;

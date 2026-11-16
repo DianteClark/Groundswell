@@ -56,10 +56,34 @@ export function thinRingTexture() {
 let _gradMap = null;
 export function toonGradient() {
   if (_gradMap) return _gradMap;
-  const d = new Uint8Array([90, 90, 90, 255, 170, 170, 170, 255, 235, 235, 235, 255, 255, 255, 255, 255]);
-  _gradMap = new THREE.DataTexture(d, 4, 1, THREE.RGBAFormat);
-  _gradMap.minFilter = _gradMap.magFilter = THREE.NearestFilter; _gradMap.needsUpdate = true;
+  // soft 3-band ramp (linear filtered → painterly soft steps instead of hard bands)
+  const v = [118, 122, 190, 236, 246, 255, 255, 255]; const d = new Uint8Array(v.length * 4);
+  v.forEach((x, i) => { d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = x; d[i * 4 + 3] = 255; });
+  _gradMap = new THREE.DataTexture(d, v.length, 1, THREE.RGBAFormat);
+  _gradMap.minFilter = _gradMap.magFilter = THREE.LinearFilter; _gradMap.needsUpdate = true;
   return _gradMap;
+}
+
+// ───────────── shared world-lighting uniforms (updated by the renderer every frame) ─────────────
+// Any material can opt in via injectWorldRim(shader) inside onBeforeCompile, then call
+// worldRim(nView, vView) in its fragment (both view space, normalized) and add the result to outgoingLight.
+export const WORLD = {
+  uSunDirV: { value: new THREE.Vector3(0.3, 0.8, 0.4).normalize() }, // view-space direction TO the sun
+  uRimColor: { value: new THREE.Color('#ffd9a8') },
+  uRimStrength: { value: 0.55 },
+  uSkyRimColor: { value: new THREE.Color('#9cc6ff') },
+  uTime: { value: 0 },
+  uGlowBoost: { value: 1.8 },
+};
+export const WORLD_RIM_GLSL = `
+uniform vec3 uSunDirV; uniform vec3 uRimColor; uniform float uRimStrength; uniform vec3 uSkyRimColor; uniform float uGlowBoost;
+vec3 worldRim(vec3 n, vec3 v){ float fr = 1.0 - clamp(dot(n, v), 0.0, 1.0); float f3 = fr*fr*fr;
+  float sun = clamp(dot(n, uSunDirV) * 0.6 + 0.4, 0.0, 1.0);
+  return (uRimColor * sun * f3 * 1.3 + uSkyRimColor * f3 * 0.35) * uRimStrength; }
+`;
+export function injectWorldRim(sh) {
+  for (const k of ['uSunDirV', 'uRimColor', 'uRimStrength', 'uSkyRimColor', 'uGlowBoost']) sh.uniforms[k] = WORLD[k];
+  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + WORLD_RIM_GLSL);
 }
 
 // Toon material with rim light + hit-flash + opacity controls. vertexColors by default.
@@ -69,13 +93,13 @@ export function makeToonMat(opts = {}) {
   m.userData.u = u;
   m.defaultAttributeValues = { color: [1, 1, 1], uv: [0, 0], uv1: [0, 0], aGlow: [0] };
   m.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, u);
+    Object.assign(sh.uniforms, u); injectWorldRim(sh);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform vec3 rimColor; uniform float rimStrength; uniform float flash; uniform vec3 flashColor;')
       .replace('#include <opaque_fragment>', `
         { vec3 vd = normalize(vViewPosition); float fr = 1.0 - clamp(dot(vd, normalize(vNormalRim)), 0.0, 1.0);
-          outgoingLight += rimColor * pow(fr, 2.6) * rimStrength; }
-        outgoingLight = mix(outgoingLight, diffuseColor.rgb * 1.15, vGlowF);
+          outgoingLight += rimColor * pow(fr, 2.6) * rimStrength; outgoingLight += worldRim(normalize(vNormalRim), vd) * diffuseColor.rgb * 1.6; }
+        outgoingLight = mix(outgoingLight, diffuseColor.rgb * uGlowBoost, vGlowF);
         outgoingLight = mix(outgoingLight, flashColor, flash);
         #include <opaque_fragment>`);
     // need a smooth-ish normal for rim even in flat mode
@@ -83,7 +107,7 @@ export function makeToonMat(opts = {}) {
       .replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\nvNormalRim = normalize(transformedNormal); vGlowF = aGlow;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vNormalRim; varying float vGlowF;');
   };
-  m.customProgramCacheKey = () => 'toonrim';
+  m.customProgramCacheKey = () => 'toonrim2';
   return m;
 }
 
@@ -91,9 +115,38 @@ export function makeFlatMat(color, opts = {}) {
   return new THREE.MeshLambertMaterial({ color, flatShading: true, vertexColors: !!opts.vertexColors, ...(opts.extra || {}) });
 }
 
+// Unlit emissive material. Output is multiplied by WORLD.uGlowBoost (HDR) so it feeds the bloom pass.
 export function makeGlowMat(color = 0xffffff, opts = {}) {
-  return new THREE.MeshBasicMaterial({ color, vertexColors: !!opts.vertexColors, transparent: !!opts.transparent, opacity: opts.opacity ?? 1,
+  const m = new THREE.MeshBasicMaterial({ color, vertexColors: !!opts.vertexColors, transparent: !!opts.transparent, opacity: opts.opacity ?? 1,
     blending: opts.additive ? THREE.AdditiveBlending : THREE.NormalBlending, depthWrite: !opts.additive, toneMapped: false, side: opts.side ?? THREE.FrontSide, fog: opts.fog ?? true });
+  const boost = opts.boost ?? 1;
+  m.onBeforeCompile = (sh) => { sh.uniforms.uGlowBoost = WORLD.uGlowBoost; sh.uniforms.uBoostK = { value: boost };
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uGlowBoost; uniform float uBoostK;')
+      .replace('#include <opaque_fragment>', 'outgoingLight *= mix(1.0, uGlowBoost, uBoostK);\n#include <opaque_fragment>'); };
+  m.customProgramCacheKey = () => 'glowboost';
+  return m;
+}
+
+// Static world material (rocks, ruins, structures): flat-shaded PBR with vertex colors, env reflections,
+// shared world rim, hit flash and an optional per-vertex glow (aGlow attribute → HDR emissive).
+export function makeWorldMat(opts = {}) {
+  const m = new THREE.MeshStandardMaterial({ vertexColors: opts.vertexColors !== false, color: opts.color ?? 0xffffff, flatShading: opts.flat !== false,
+    roughness: opts.roughness ?? 0.86, metalness: opts.metalness ?? 0.0, envMapIntensity: opts.env ?? 1, emissive: opts.emissive ?? 0x000000, emissiveIntensity: opts.emissiveIntensity ?? 1, transparent: !!opts.transparent, opacity: opts.opacity ?? 1 });
+  const u = { flash: { value: 0 }, flashColor: { value: new THREE.Color(1, 1, 1) }, rimStrength: { value: opts.rimStrength ?? 0.6 }, rimColor: { value: col(opts.rim ?? 0xffffff) } };
+  m.userData.u = u;
+  m.defaultAttributeValues = { color: [1, 1, 1], uv: [0, 0], uv1: [0, 0], aGlow: [0] };
+  m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, u); injectWorldRim(sh);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aGlow; varying float vGlowW;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlowW = aGlow;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float flash; uniform vec3 flashColor; uniform float rimStrength; uniform vec3 rimColor; varying float vGlowW;')
+      .replace('#include <opaque_fragment>', `{ vec3 vv = normalize(vViewPosition); outgoingLight += worldRim(normal, vv) * diffuseColor.rgb * 1.4 * rimStrength;
+          float fr = 1.0 - clamp(dot(vv, normal), 0.0, 1.0); outgoingLight += rimColor * fr*fr*fr * rimStrength * 0.25; }
+        outgoingLight = mix(outgoingLight, diffuseColor.rgb * uGlowBoost * 1.1, vGlowW);
+        outgoingLight = mix(outgoingLight, flashColor, flash);
+        #include <opaque_fragment>`);
+  };
+  m.customProgramCacheKey = () => 'worldmat';
+  return m;
 }
 
 export function makeSpriteMat(color, opacity = 1) {

@@ -68,19 +68,23 @@ export class Match {
 
   unitsInRadius(x, y, r, filter) {
     const out = [];
+    const lim = r + 5;
     for (const e of this.entities.values()) {
       if (!e.alive) continue;
-      const rr = r + (e.radius || 0);
       const dx = e.x - x, dy = e.y - y;
+      if (dx > lim || dx < -lim || dy > lim || dy < -lim) continue;
+      const rr = r + (e.radius || 0);
       if (dx * dx + dy * dy <= rr * rr && (!filter || filter(e))) out.push(e);
     }
     return out;
   }
   findUnitAt(x, y, r, filter) {
-    let best = null, bd = Infinity;
+    let best = null, bd = Infinity; const lim = r + 5;
     for (const e of this.entities.values()) {
       if (!e.alive) continue;
-      const d = Math.hypot(e.x - x, e.y - y) - (e.radius || 0);
+      const dx = e.x - x, dy = e.y - y;
+      if (dx > lim || dx < -lim || dy > lim || dy < -lim) continue;
+      const d = Math.sqrt(dx * dx + dy * dy) - (e.radius || 0);
       if (d <= r && d < bd && (!filter || filter(e))) { bd = d; best = e; }
     }
     return best;
@@ -124,7 +128,7 @@ export class Match {
         if (!api.m.unitsInRadius(self.x, self.y, 16, e => e.kind === 'minion' && e.team !== self.team).length) info.amount *= 0.35; } };
     }
     for (const c of MAP.cores) {
-      const core = this.addEntity(this._unit({ kind: 'core', team: c.team, x: c.x, y: c.y, radius: 3.5, stats: { maxHp: 4000, armor: 40 }, visual: { model: 'core' } }));
+      const core = this.addEntity(this._unit({ kind: 'core', team: c.team, x: c.x, y: c.y, radius: 3.5, stats: { maxHp: 3500, armor: 40 }, visual: { model: 'core' } }));
       core.navHandle = this.nav.addObstacle(c.x, c.y, 3.2);
       core.protected = (m) => m._coreProtected(core);
     }
@@ -308,7 +312,7 @@ export class Match {
         return;
       }
     }
-    if (!h.alive) return;
+    if (!h.alive) { if (cmd.type === 'moveDir') { const l = Math.hypot(cmd.dx, cmd.dy); h.joy = l < 0.05 ? null : { dx: cmd.dx / l, dy: cmd.dy / l }; } return; }
     switch (cmd.type) {
       case 'move': {
         interruptRecall(this, h); this._cancelWindup(h);
@@ -572,8 +576,10 @@ export class Match {
   }
   _startAttack(e, t) {
     const { period, windup } = this.attackTiming(e);
-    e.windup = { targetId: t.id, at: this.time + windup, start: this.time };
-    e.nextAttackAt = this.time + period;
+    // keep the cadence exact: if the timer came due during the last tick, count from when it came due
+    const base = (e.nextAttackAt > this.time - DT && e.nextAttackAt <= this.time) ? e.nextAttackAt : this.time;
+    e.windup = { targetId: t.id, at: base + windup, start: this.time };
+    e.nextAttackAt = base + period;
     e.anim = { state: 'attack', t: 0, dur: period, windup };
     this.emit({ t: 'attack', srcId: e.id, targetId: t.id, windup, period });
   }
@@ -609,6 +615,7 @@ export class Match {
     }
     amt = e.stats.power * (e.def?.attackRatio ?? 1);
     if (e.kind === 'minion' && t.kind === 'hero') amt *= 0.6;
+    else if (e.kind === 'minion' && (t.kind === 'tower' || t.kind === 'core')) amt *= e.minionType === 'siege' ? 2.2 : 1.6;   // 3.0 pacing: waves threaten structures
     const info = { amount: amt, onHit: true, empowered: false };
     if (e.kind === 'hero') { this.callHooks(e, 'modifyAutoAttack', t, info); if (t.kind === 'hero') e.aggroAt = this.time; }
     if (e.kind === 'summon' && t.kind === 'hero') { const ow = this.entities.get(e.ownerId); if (ow) ow.aggroAt = this.time; }
@@ -803,6 +810,7 @@ export class Match {
     const range = t.stats.attackRange;
     let cur = t.target ? this.entities.get(t.target) : null;
     if (cur && (!cur.alive || !isTargetable(cur) || dist(t, cur) > range + cur.radius || !cur.vis[t.team])) cur = null;
+    if (cur && !t.windup && this.time < t.nextAttackAt - DT && (this.tickCount + t.id) % 4) return;   // re-evaluate ~15x/s while busy
     // priority: enemy hero hitting an allied hero in range
     const agg = this.findUnitAt(t.x, t.y, range, h => h.kind === 'hero' && h.team !== t.team && isTargetable(h) && h.vis[t.team] && h.aggroAt && this.time - h.aggroAt < 1.0 && this._heroHitAllyInRange(h, t));
     if (agg) cur = agg;

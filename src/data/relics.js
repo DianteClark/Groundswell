@@ -10,7 +10,7 @@ export const RELICS = [
       api.vfx('relic_blink', { x: h.x, y: h.y, tx: p.x, ty: p.y, team: h.team, srcId: h.id });
       api.teleport(h, p.x, p.y); h.data._blinkAt = api.time;
     },
-    hooks: { modifyAutoAttack(api, h, t, info) { if (api.time - (h.data._blinkAt ?? -99) < 3) { h.data._blinkAt = -99; info.amount *= 1.3; } } } },
+    hooks: { modifyAutoAttack(api, h, t, info) { if (api.time - (h.data._blinkAt ?? -99) < 3) { h.data._blinkAt = -99; info.amount *= 1.3; info.empowered = true; } } } },
 
   { id: 'hunters_brand', name: 'Hunter\'s Brand', icon: '🔥', cd: 40, range: 6, targeting: 'unit', unlock: { cost: 0 },
     targetFilter: (e) => e.kind === 'monster' || e.kind === 'hero' || e.kind === 'minion',

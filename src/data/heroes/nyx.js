@@ -4,13 +4,13 @@ const isolated = (api, h, t) => !api.m.unitsInRadius(t.x, t.y, 6, e => e !== t &
 export default {
   id: 'nyx', name: 'Nyx', title: 'Shadowstep', role: 'Assassin', difficulty: 3,
   color: '#7a3cff', lore: 'Nobody hires Nyx. People simply wake up to find the job already done.',
-  base: { maxHp: 600, power: 64, armor: 24, attackRange: 2.4, attackSpeed: 0.85, moveSpeed: 10.4, hpRegen: 2.4 },
+  base: { maxHp: 610, power: 67, armor: 24, attackRange: 2.4, attackSpeed: 0.85, moveSpeed: 10.4, hpRegen: 2.4 },
   growth: { maxHp: 84, power: 4.6, armor: 3, attackSpeed: 0.02, hpRegen: 0.2 },
-  attackRatio: 1, ranged: false, projectile: null,
+  attackRatio: 1, ranged: false, projectile: null, windup: 0.2,
   abilities: {
     passive: { name: 'Shadow Veil', desc: 'After 3s out of combat — or 1.5s unseen by enemies — her next hit deals +40 (+14/lvl, +45% Power) and slows 30%.' },
     q: {
-      name: 'Shade Dash', desc: 'Dash 6.5m, dealing 55 (+18/lvl, +65% Power) to enemies passed, leaving an afterimage. Recast within 3.5s to swap back to it.',
+      name: 'Shade Dash Resets your attack timer.', desc: 'Dash 6.5m, dealing 55 (+18/lvl, +65% Power) to enemies passed, leaving an afterimage. Recast within 3.5s to swap back to it.',
       cd: 9, range: 6.5, targeting: 'skillshot', tags: ['engage', 'escape'],
       bot: { kind: 'dash', engage: true, escape: true, radius: 1.6, recast: 'return' },
       cast(api, h, aim) {
@@ -28,12 +28,12 @@ export default {
         img.visionRange = 0; img.invulnerable = true; img.facing = h.facing; h.data.imgId = img.id;
         const tx = h.x + aim.dirX * L, ty = h.y + aim.dirY * L;
         api.vfx('nyx_q', { x: h.x, y: h.y, tx, ty, team: h.team, srcId: h.id });
-        api.dashHit(h, tx, ty, { speed: 36, radius: 1.7, onHit: (t) => { api.hit(h, t, api.scale(h, 55, 18, 0.65), 'nyx_q'); } });
+        api.dashHit(h, tx, ty, { speed: 38, radius: 1.8, onArrive: () => api.resetAttack(h), onHit: (t) => { api.hit(h, t, api.scale(h, 55, 18, 0.65), 'nyx_q'); } });
         return api.openRecast(h, 'q', 3.5, 9, () => { const i = api.entity(h.data.imgId); if (i?.alive) api.m.remove(i); });
       },
     },
     w: {
-      name: 'Hollow Strike', desc: 'Strike an adjacent enemy for 80 (+26/lvl, +90% Power). +40% damage if no allies of the target stand within 6m.',
+      name: 'Hollow Strike Resets your attack timer.', desc: 'Strike an adjacent enemy for 88 (+27/lvl, +95% Power). +40% damage if no allies of the target stand within 6m.',
       cd: 7, range: 3.5, targeting: 'unit', tags: ['burst'],
       bot: { kind: 'target', finisher: true },
       cast(api, h, aim) {
@@ -41,7 +41,8 @@ export default {
         const iso = isolated(api, h, t);
         const mult = iso ? (api.aug(h, 6, 'a') ? 1.8 : 1.4) : 1;
         api.vfx(iso ? 'nyx_w_iso' : 'nyx_w', { x: t.x, y: t.y, team: h.team, srcId: h.id, targetId: t.id });
-        api.hit(h, t, api.scale(h, 80, 26, 0.9) * mult, 'nyx_w');
+        api.hit(h, t, api.scale(h, 88, 27, 0.95) * mult, 'nyx_w', iso ? { heavy: true } : {});
+        api.resetAttack(h);
         if (!t.alive && api.aug(h, 6, 'b')) return { cd: 0.5 };
       },
     },
@@ -82,7 +83,7 @@ export default {
       if (!h.data.primed || info.type === 'true' || t.kind === 'tower' || t.kind === 'core') return;
       if (info.type !== 'auto' && info.type !== 'ability') return;
       h.data.primed = false; h.data.seenAt = api.time;
-      info.amount += api.scale(h, 40, 14, 0.45);
+      info.amount += api.scale(h, 40, 14, 0.45); info.empowered = true;
       api.slow(h, t, 0.3, 1, 'nyx_p');
       api.vfx('nyx_p_hit', { x: t.x, y: t.y, team: h.team, srcId: h.id, targetId: t.id });
     },

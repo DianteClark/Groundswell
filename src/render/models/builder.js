@@ -76,6 +76,8 @@ export const G = {
     for (let i = 0; i <= rings; i++) { const r = r0 + (r1 - r0) * (i / rings); const c = curve.getPoint(i / rings); for (let j = 0; j < n; j++) { const idx = i * n + j; p.setXYZ(idx, c.x + (p.getX(idx) - c.x) * r, c.y + (p.getY(idx) - c.y) * r, c.z + (p.getZ(idx) - c.z) * r); } }
     return g;
   },
+  // double-sided triangle fan through 3D points (wing membranes, capes); first point is the hub
+  fan: (pts) => { const pos = []; const P0 = pts[0]; for (let i = 1; i < pts.length - 1; i++) { const a = pts[i], b = pts[i + 1]; pos.push(...P0, ...a, ...b, ...P0, ...b, ...a); } const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); return g; },
   // ring band (flat washer) of radius R, width w, height h
   band: (R, w, h, seg = 10) => G.lathe([[R - w, -h / 2], [R, -h / 2], [R, h / 2], [R - w, h / 2], [R - w, -h / 2]], seg),
 };

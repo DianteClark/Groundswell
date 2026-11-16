@@ -151,9 +151,19 @@ export class BotBrain {
   moveTo(x, y, force = false) {
     const h = this.h, o = h.order;
     if (this.nearEnemyFountain(x, y, 1)) { const f = MAP.fountains[1 - h.team]; const dx = x - f.x, dy = y - f.y, l = Math.hypot(dx, dy) || 1; x = f.x + dx / l * 22; y = f.y + dy / l * 22; if (l < 1) { x = f.x + (h.team ? 22 : -22); } const q = this.m.nav.nearestFree(x, y); x = q.x; y = q.y; }
-    if (!force && o?.type === 'move' && Math.hypot(o.x - x, o.y - y) < 1.5) return;
-    if (Math.hypot(h.x - x, h.y - y) < 0.8 && !o) return;
-    if (h.windup && !force) return; // don't cancel an attack in progress
+    const dNew = Math.hypot(h.x - x, h.y - y);
+    if (!force) {
+      // commit to movement decisions: ignore tiny re-targets, short reversals and idle micro-steps (no twitching)
+      if (o?.type === 'move') {
+        if (Math.hypot(o.x - x, o.y - y) < 1.5) return;
+        const cx = o.x - h.x, cy = o.y - h.y, nx = x - h.x, ny = y - h.y;
+        const cl = Math.hypot(cx, cy) || 1, nl = dNew || 1;
+        if ((cx * nx + cy * ny) / (cl * nl) < -0.17 && this.m.time - (this.lastMoveAt || -9) < 0.9) return;   // no flip-flopping
+      } else if (!o && dNew < 1.6) return;
+      if (h.windup) return; // don't cancel an attack in progress
+    }
+    if (dNew < 0.5 && !o) return;
+    this.lastMoveAt = this.m.time;
     this.cmd({ type: 'move', x, y });
   }
   attack(t) {
@@ -269,7 +279,7 @@ export class BotBrain {
     }
     if (!closest && !towerOnMe && h.hp < h.maxHp * 0.55 && dist(h, this.fountain()) > 30 && this.safeToRecall()) { this.cmd({ type: 'recall' }); this.recalledAt = m.time; return true; }
     const p = this.retreatPoint();
-    this.moveTo(p.far.x, p.far.y);
+    this.moveTo(p.far.x, p.far.y, !(h.order?.type === 'move' && Math.hypot(h.order.x - p.far.x, h.order.y - p.far.y) < 2));
     return true;
   }
 
@@ -569,11 +579,13 @@ export class BotBrain {
     if (siegeOK) { this.attack(et); return; }
     const core = [...m.entities.values()].find(e => e.kind === 'core' && e.team !== h.team && e.alive && dist(e, h) < 24 && !e.protected?.(m));
     if (core && !this.towerDanger(core.x, core.y)) { this.attack(core); return; }
-    if (front) { // hold position near the wave
-      if (dist(h, hold) > 2.5) this.moveTo(hold.x, hold.y);
-    } else {
-      // no wave: wait at tower, or advance toward next wave
-      if (dist(h, hold) > 3) this.moveTo(hold.x, hold.y);
+    // hold position near the wave (hysteresis: start walking at 3.2, keep re-targeting while already walking)
+    const walking = h.order?.type === 'move';
+    if (dist(h, hold) > (walking ? 1.2 : 3.2)) {
+      // lead the hold point along the lane when it is ahead of us, so we walk with the wave instead of stop-go
+      const ahead = laneProject(geo, hold.x, hold.y).s > me.s + 1;
+      const p = ahead ? lanePoint(geo, holdS + 2) : hold;
+      this.moveTo(p.x, p.y);
     }
   }
   /** Predicted damage a minion takes from our minions/towers within `secs`. */

@@ -40,6 +40,7 @@ const P = (b, n, x, y, z) => { const bn = b[n]; if (bn) { bn.position.x += x; bn
 
 function hasStatus(e, k) { return !!e?.statuses && e.statuses.some((s) => s.key === k); }
 
+export function rigState(rig) { return state(rig); }
 function state(rig) {
   return rig.st || (rig.st = { last: null, speed: 0, turn: 0, phase: Math.random() * TAU, px: null, pz: null, prot: null, run: 0, act: null, flinch: 0, fdir: 0, squash: 0, deadT: 0, wasDead: false, rise: 0, idleT: Math.random() * 5, fidget: -1, atkN: 0, prevState: null, prevT: 0, lastAnimObj: null, chan: 0, stun: 0, air: 0 });
 }
@@ -93,9 +94,11 @@ export function poseRig(rig, anim, time, moving) {
   // ── detect action starts from the anim stream
   if (!dead) {
     const fresh = animState !== st.prevState || at + 1e-4 < st.prevT;
-    if (fresh && at < 0.25) {
+    const kindNow = animState === 'attack' ? 'attack' : animState === 'cast' ? 'cast' : null;
+    const dup = st.act && st.act.kind === kindNow && st.act.t < 0.2;
+    if (fresh && at < 0.25 && !dup) {
       if (animState === 'attack') playAction(rig, 'attack', { period: anim.dur, windup: anim.windup, t: at });
-      else if (animState === 'cast') { const slot = st.castSlot || (typeof ent?.anim?.slot === 'string' ? ent.anim.slot : null) || 'q'; st.castSlot = null; playAction(rig, 'cast', { slot, t: at }); }
+      else if (animState === 'cast') { const slot = st.castSlot || (typeof anim.slot === 'string' ? anim.slot : null) || (typeof ent?.anim?.slot === 'string' ? ent.anim.slot : null) || 'q'; st.castSlot = null; playAction(rig, 'cast', { slot, t: at }); }
     }
   }
   st.prevState = animState; st.prevT = at;

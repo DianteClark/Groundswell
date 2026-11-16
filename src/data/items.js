@@ -81,7 +81,7 @@ export const ITEMS = [
     branches: {
       a: { id: 'warbanner', name: 'Warbanner', icon: '🏳', cost: 1100, stats: { armor: 32, maxHp: 220, haste: 15 }, desc: '+32 Armor, +220 HP, +15 Haste',
         passive: { name: 'Rally', desc: 'Allied champions within 10m gain +10 Armor.', hooks: {
-          onTick(api, h) { if (api.m.tickCount % 10 !== 0) return; for (const a of api.allyHeroesInRadius(h, h.x, h.y, 10)) if (a !== h) api.mod(a, { duration: 0.5, add: { armor: 10 }, tag: 'warbanner' }); } } } },
+          onTick(api, h) { if (api.m.tickCount % api.ticks(1 / 3) !== 0) return; for (const a of api.allyHeroesInRadius(h, h.x, h.y, 10)) if (a !== h) api.mod(a, { duration: 0.5, add: { armor: 10 }, tag: 'warbanner' }); } } } },
       b: { id: 'sentinel_plate', name: 'Sentinel Plate', icon: '🗿', cost: 1100, stats: { armor: 30, maxHp: 260, haste: 15 }, desc: '+30 Armor, +260 HP, +15 Haste',
         passive: { name: 'Vigil', desc: 'Crowd-controlling a champion grants a 60 (+12/lvl) shield (6s cd).', hooks: {
           onApplyCC(api, h, t) { if (t.kind !== 'hero' || (h.data._sentAt || -99) + 6 > api.time) return; h.data._sentAt = api.time; api.shield(h, 60 + 12 * (h.level - 1), 3, 'sentinel', h); } } } },

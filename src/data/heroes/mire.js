@@ -6,13 +6,13 @@ const track = (h, a) => { h.data.zones = (h.data.zones || []).filter(Boolean); h
 export default {
   id: 'mire', name: 'Mire', title: 'Bog Witch', role: 'Controller', difficulty: 2,
   color: '#4a8c5c', lore: 'The marsh remembers every footprint. Mire makes sure it never forgets yours.',
-  base: { maxHp: 545, power: 50, armor: 20, attackRange: 10.5, attackSpeed: 0.68, moveSpeed: 9.8, hpRegen: 2.0 },
+  base: { maxHp: 530, power: 48, armor: 20, attackRange: 10.5, attackSpeed: 0.68, moveSpeed: 9.8, hpRegen: 2.0 },
   growth: { maxHp: 78, power: 3.6, armor: 2.6, attackSpeed: 0.015, hpRegen: 0.18 },
-  attackRatio: 1, ranged: true, projectile: 'auto_mire',
+  attackRatio: 1, ranged: true, projectile: 'auto_mire', missileSpeed: 46,
   abilities: {
     passive: { name: 'Bog Blood', desc: 'While standing in her own pools, near her totem, or in her swamp, Mire heals 1.2% max HP per second (2.5% in the swamp).' },
     q: {
-      name: 'Sludge Pool', desc: 'Lob sludge (11m): 45 (+13/lvl, +40% Power) on impact, leaving a 3.6m pool for 4s that slows 35% and deals 9 (+2.6/lvl, +6% Power) every 0.5s. Swamp: bigger, slows 50%.',
+      name: 'Sludge Pool', desc: 'Lob sludge (11m): 40 (+12/lvl, +38% Power) on impact, leaving a 3.6m pool for 4s that slows 35% and deals 7.5 (+2.2/lvl, +5% Power) every 0.5s. Swamp: bigger, slows 50%.',
       cd: 7, range: 11, targeting: 'area', tags: ['poke', 'zone', 'cc', 'farm'],
       bot: { kind: 'zone', radius: 3.6, delay: 0.35, poke: true, farm: true },
       cast(api, h, aim) {
@@ -22,15 +22,15 @@ export default {
         const slow = sw ? 0.5 : 0.35;
         api.vfx('mire_q', { x: h.x, y: h.y, tx: aim.x, ty: aim.y, radius: R, duration: 0.35, team: h.team, srcId: h.id });
         api.schedule(0.35, () => {
-          for (const e of api.enemiesInRadius(h, aim.x, aim.y, R)) { api.hit(h, e, api.scale(h, 45, 13, 0.4), 'mire_q'); }
+          for (const e of api.enemiesInRadius(h, aim.x, aim.y, R)) { api.hit(h, e, api.scale(h, 40, 12, 0.38), 'mire_q'); }
           const a = api.zone({ src: h, x: aim.x, y: aim.y, radius: R, duration: dur, visual: 'mire_q', tickEvery: 0.5, data: { mire: true },
-            onTick: (us) => { for (const e of us) if (api.isEnemy(h, e)) { api.slow(h, e, slow, 0.6, 'mire_q'); api.hit(h, e, api.scale(h, 9, 2.6, 0.06), 'mire_q'); } } });
+            onTick: (us) => { for (const e of us) if (api.isEnemy(h, e)) { api.slow(h, e, slow, 0.6, 'mire_q'); api.hit(h, e, api.scale(h, 7.5, 2.2, 0.05), 'mire_q'); } } });
           track(h, a);
         });
       },
     },
     w: {
-      name: 'Hex Totem', desc: 'Plant a totem (8s, 150 +30/lvl HP) that zaps the nearest enemy (champions first) every 1s for 20 (+6/lvl, +20% Power). Every 3rd zap on a champion roots it for 1s. Swamp: zaps twice as fast.',
+      name: 'Hex Totem', desc: 'Plant a totem (8s, 150 +30/lvl HP) that zaps the nearest enemy (champions first) every 1s for 17 (+5/lvl, +18% Power). Every 3rd zap on a champion roots it for 1s. Swamp: zaps twice as fast.',
       cd: 14, range: 9, targeting: 'point', tags: ['zone', 'cc', 'poke'],
       bot: { kind: 'zone', radius: 8, delay: 0.5 },
       cast(api, h, aim) {
@@ -48,7 +48,7 @@ export default {
             s.data.nextZap = api.time + (inSwamp(api, h, s.x, s.y) ? 0.5 : 1.0);
             s.facing = Math.atan2(tgt.y - s.y, tgt.x - s.x); s.anim = { state: 'attack', t: 0 };
             api.homing({ src: s, target: tgt, speed: 40, visual: 'mire_w_zap', onHit: (tt) => {
-              api.hit(s, tt, api.scale(h, 20, 6, 0.2), 'mire_w');
+              api.hit(s, tt, api.scale(h, 17, 5, 0.18), 'mire_w');
               if (tt.kind === 'hero') {
                 const z = s.data.zaps = s.data.zaps || {}; z[tt.id] = (z[tt.id] || 0) + 1;
                 if (z[tt.id] >= (api.aug(h, 6, 'a') ? 2 : 3)) { z[tt.id] = 0; api.root(h, tt, 1); api.vfx('mire_w_root', { x: tt.x, y: tt.y, team: h.team, srcId: h.id, targetId: tt.id }); }

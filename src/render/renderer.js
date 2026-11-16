@@ -1,16 +1,21 @@
 // Groundswell renderer: reads sim state, draws the diorama. Interface per SPEC.md.
 import * as THREE from 'three';
-import { MapView } from './map.js';
+import { MapView, FOLIAGE_U } from './map.js';
 import { buildHero, poseRig } from './models/heroes.js';
-import { MinionInstancer, buildTower, buildCore, buildMonster, poseMonster, buildSummon, buildRubble, ELEMENT_COLORS } from './models/units.js';
+import { MinionInstancer, buildMonster, poseMonster, buildSummon, ELEMENT_COLORS } from './models/units.js';
 import { G } from './models/builder.js';
 import { Vfx, makeBubbleMat } from './vfx.js';
 import { Bars } from './bars.js';
 import { ZoneFx, TelegraphFx, ZONE_COLORS } from './zones.js';
 import { buildProjectile, buildArea, runeTexture } from './projectiles.js';
 import { handleAbilityFx } from './abilityfx.js';
-import { teamColor, ringTexture, thinRingTexture, glowTexture, makeGlowMat, makeToonMat, clamp, lerp, ease, disposeTree } from './util.js';
+import { teamColor, ringTexture, thinRingTexture, glowTexture, makeGlowMat, makeToonMat, clamp, lerp, ease, disposeTree, WORLD } from './util.js';
 import { getSkin } from '../data/skins.js';
+import { PostPipeline } from './post/composer.js';
+import { LightRig, buildEnvironment } from './env/sky.js';
+import { FogOfWar } from './env/fog.js';
+import { buildTowerV3, buildCoreV3, buildRubbleV3 } from './env/structures.js';
+import { CombatFx } from './fx/combat.js';
 
 const PI = Math.PI;
 const PITCH = 55 * PI / 180;
@@ -32,50 +37,69 @@ export class Renderer {
     const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
     this.mobile = coarse || /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent || '');
     this.dpr = Math.min(window.devicePixelRatio || 1, 3);
-    this.gl = new THREE.WebGLRenderer({ canvas, antialias: !this.mobile || this.dpr < 2, powerPreference: 'high-performance', alpha: false, stencil: false });
+    this.gl = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', alpha: false, stencil: false });
+    this.gl.outputColorSpace = THREE.SRGBColorSpace;
     this.gl.shadowMap.enabled = true; this.gl.shadowMap.type = THREE.PCFShadowMap;
     this.gl.setClearColor(0x1a2a3a);
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color('#223a4e');
-    this.scene.fog = new THREE.Fog('#223a4e', 95, 190);
+    this.scene.background = new THREE.Color('#2b4a5e');
+    this.overlay = new THREE.Scene(); // drawn after post (bars, numbers, aim indicators): crisp, ungraded
     this.camera = new THREE.PerspectiveCamera(38, 1, 1, 400);
-    this.hemi = new THREE.HemisphereLight('#dff0ff', '#4a5a3a', 1.9); this.scene.add(this.hemi);
-    this.sun = new THREE.DirectionalLight('#fff0d8', 2.6); this.sun.castShadow = true;
-    const sc = this.sun.shadow.camera; sc.left = -48; sc.right = 48; sc.top = 48; sc.bottom = -48; sc.near = 1; sc.far = 160;
-    this.sun.shadow.bias = -0.0008; this.sun.shadow.normalBias = 0.04;
-    this.scene.add(this.sun); this.scene.add(this.sun.target);
+    this.lights = new LightRig(this.scene); this.sun = this.lights.sun; this.hemi = this.lights.hemi;
+    try { this.envRT = buildEnvironment(this.gl); this.scene.environment = this.envRT.texture; this.scene.environmentIntensity = 0.5; } catch (e) { console.warn('env', e); }
     this.camDist = 44; this.follow = true; this.panOff = new THREE.Vector2(); this.camT = new THREE.Vector3(120, 0, 80); this.camFree = new THREE.Vector3(120, 0, 80);
+    this.camVel = new THREE.Vector2(); this.camKick = new THREE.Vector2(); this.camKickV = new THREE.Vector2(); this.trauma = 0; this.shake = 0;
+    this.heroVel = new THREE.Vector2(); this._lastHP = null; this.lookAhead = new THREE.Vector2();
+    this.timeScale = 1; this.hitstopUntil = 0; this.flash = 0; this.flashColor = new THREE.Color(1, 1, 1);
     this.w = canvas.clientWidth || 800; this.h = canvas.clientHeight || 600;
-    this.time = 0; this.views = new Map(); this.rubble = []; this.telegraphs = []; this.colorCache = new Map();
+    this.time = 0; this.realTime = 0; this.views = new Map(); this.rubble = []; this.telegraphs = []; this.colorCache = new Map();
     this.perf = { acc: 0, n: 0, scale: 1, t: 0 };
+    this.stats = { calls: 0, triangles: 0, points: 0, programs: 0 };
     this.vfx = new Vfx(this.scene, this.mobile ? 'med' : 'high');
-    this.bars = new Bars(this.scene);
+    for (const it of this.vfx.texts?.items || []) if (it.sp) this.overlay.add(it.sp);
+    this.bars = new Bars(this.overlay);
     this.minions = new MinionInstancer(this.scene);
     this._ray = new THREE.Raycaster(); this._plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    this.setQuality(this.mobile ? 'med' : 'high');
+    this._blobs();
+    this.swell = 0; this.swellTele = false;
+    // optional combat feel layer (HEROES/VFX team): src/render/fx/combat.js registers itself in fx/registry.js
+    try { this.combatFx = new CombatFx(this); } catch (e) { console.warn('combatFx', e); }
+    const q0 = 'auto'; this.setQuality(q0);
     this.resize(this.w, this.h);
   }
+  _blobs() { // soft contact shadows under units (one instanced draw)
+    const cv = document.createElement('canvas'); cv.width = cv.height = 64; const g = cv.getContext('2d');
+    const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(0,0,0,0.85)'); gr.addColorStop(0.5, 'rgba(0,0,0,0.45)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    const tex = new THREE.CanvasTexture(cv);
+    const m = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-PI / 2), new THREE.MeshBasicMaterial({ map: tex, color: 0x0a1a10, transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 }), 256);
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.frustumCulled = false; m.renderOrder = 1; m.count = 0; this.scene.add(m); this.blobMesh = m; this._bm = new THREE.Matrix4(); this._bn = 0;
+  }
+  _blob(x, z, r, y = 0) { if (this._bn >= 256) return; this._bm.makeScale(r * 2.4, 1, r * 2.4); this._bm.setPosition(x, y + 0.035, z); this.blobMesh.setMatrixAt(this._bn++, this._bm); }
 
   // ───────────────────────── public API ─────────────────────────
+  /** 'low' | 'med' | 'high' | 'auto' */
   setQuality(q) {
+    if (q === 'auto' || !['low', 'med', 'high'].includes(q)) {
+      // iPhones / iPads (Apple GPU) easily take med+post; desktop → high
+      q = this.mobile ? (this.dpr >= 3 || /iPhone|iPad|Macintosh/.test(navigator.userAgent || '') ? 'med' : 'med') : 'high';
+    }
     this.quality = q;
-    this.gl.shadowMap.enabled = q !== 'low';
-    this.sun.castShadow = q !== 'low';
-    const ms = q === 'high' ? 2048 : 1024;
-    if (this.sun.shadow.mapSize.x !== ms) { this.sun.shadow.mapSize.set(ms, ms); this.sun.shadow.map?.dispose(); this.sun.shadow.map = null; }
-    this.gl.shadowMap.type = q === 'high' ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    const shadows = q !== 'low';
+    this.gl.shadowMap.enabled = shadows; this.sun.castShadow = shadows; this.gl.shadowMap.type = THREE.PCFShadowMap;
+    this.lights.setShadowSize(q === 'high' ? 2048 : 1536); this.sun.shadow.radius = q === 'high' ? 3 : 2.2;
+    if (q === 'low') { this.post?.dispose(); this.post = null; this.gl.toneMapping = THREE.ACESFilmicToneMapping; this.gl.toneMappingExposure = 1.1; this.scene.fog = new THREE.Fog('#9fc4d8', 80, 170); WORLD.uGlowBoost.value = 1.15; }
+    else { if (!this.post) this.post = new PostPipeline(this.gl, q); else this.post.setQuality(q); this.gl.toneMapping = THREE.NoToneMapping; this.scene.fog = null; WORLD.uGlowBoost.value = 2.0; }
     this.scene.traverse((o) => { if (o.material) { const ms2 = Array.isArray(o.material) ? o.material : [o.material]; ms2.forEach((m) => { m.needsUpdate = true; }); } });
     this.vfx.setQuality(q); this.mapView?.setQuality?.(q);
-    if (this.mapView) this.mapView.decor.visible = q !== 'low';
     this._applyPixelRatio();
   }
-  _basePR() { return this.quality === 'low' ? Math.min(this.dpr, 1) : this.quality === 'med' ? Math.min(this.dpr, 1.5) : Math.min(this.dpr, 2); }
+  _basePR() { return this.quality === 'low' ? Math.min(this.dpr, 1) : this.quality === 'med' ? Math.min(this.dpr, 1.6) : Math.min(this.dpr, 2); }
   _applyPixelRatio() {
     const pr = Math.max(0.5, this._basePR() * this.perf.scale);
     if (Math.abs(this.gl.getPixelRatio() - pr) > 0.01) { this.gl.setPixelRatio(pr); this.gl.setSize(this.w, this.h, false); }
     this._pointScale();
   }
-  _pointScale() { const v = new THREE.Vector2(); this.gl.getDrawingBufferSize(v); this.vfx.setPointScale(v.y / (2 * Math.tan(this.camera.fov * PI / 360))); }
+  _pointScale() { const v = this._v2 || (this._v2 = new THREE.Vector2()); this.gl.getDrawingBufferSize(v); this.pointScale = v.y / (2 * Math.tan(this.camera.fov * PI / 360)); this.vfx.setPointScale(this.pointScale); }
   resize(w, h) {
     this.w = Math.max(1, w | 0); this.h = Math.max(1, h | 0);
     this.gl.setPixelRatio(Math.max(0.5, this._basePR() * this.perf.scale));
@@ -107,7 +131,7 @@ export class Renderer {
     const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
     const rg = new THREE.PlaneGeometry(1, 1); rg.rotateX(-PI / 2); rg.translate(0, 0, -0.5); // extends along -Z; we rotate so -Z points at aim
     this.indRect = new THREE.Mesh(rg, new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, toneMapped: false })); this.indRect.renderOrder = 51; g.add(this.indRect);
-    this.scene.add(g); this.indG = g; return g;
+    this.overlay.add(g); this.indG = g; return g;
   }
   _updIndicator() {
     const o = this.ind; if (!o || !this.indG) return;
@@ -156,10 +180,12 @@ export class Renderer {
     this.match = match; this.localPlayerId = localPlayerId ?? match?.localPlayerId;
     if (!match) return;
     this.mapView = new MapView(match.map || {}, this.quality); this.scene.add(this.mapView.group);
-    this.mapView.decor.visible = this.quality !== 'low';
     const lh = this._localHero(); this.localTeam = lh?.team ?? 0;
+    this.fog = new FogOfWar(match.map || {}, this.mapView.canopyList);
     this.lastTick = match.tickCount ?? 0;
     if (lh) { this.camT.set(lh.x, 0, lh.y); this.camFree.copy(this.camT); }
+    this.swell = 0; this.swellTele = false; this.lights.swell = this.lights.swellTarget = match.finalSwell ? 1 : 0;
+    this._warmup();
     // pre-existing map changes (zones are areas -> handled by sync)
   }
   _clearMatch() {
@@ -167,11 +193,31 @@ export class Renderer {
     for (const r of this.rubble) { this.scene.remove(r); disposeTree(r); } this.rubble = [];
     for (const t of this.telegraphs) t.dispose(); this.telegraphs = [];
     if (this.mapView) { this.scene.remove(this.mapView.group); this.mapView.dispose(); this.mapView = null; }
+    this.fog?.dispose(); this.fog = null;
     this.vfx.clear(); this.colorCache.clear();
   }
   dispose() {
-    this._clearMatch(); if (this.indG) { this.scene.remove(this.indG); disposeTree(this.indG); } this.vfx.dispose(); this.bars.dispose(); this.minions.dispose();
+    this._clearMatch(); if (this.indG) { this.overlay.remove(this.indG); disposeTree(this.indG); } this.vfx.dispose(); this.bars.dispose(); this.minions.dispose();
+    this.post?.dispose(); this.envRT?.dispose(); this.blobMesh.geometry.dispose(); this.blobMesh.material.map.dispose(); this.blobMesh.material.dispose();
     this.gl.dispose(); this.gl.forceContextLoss?.();
+  }
+
+  /** compile every material in the scene + a sample of transient effects now, so no shader hitch mid-match */
+  _warmup() {
+    try {
+      const warm = this._warmScene || (this._warmScene = new THREE.Scene()); const keep = [];
+      for (const key of ['tower_shot', 'caster_shot', 'siege_shot', 'auto_vex', 'lumi_q', 'kaela_q', 'nyx_q', 'mire_q', 'pip_q', 'garrok_q', 'bram_q']) { try { const P = buildProjectile(key, '#ffffff', '#ffffff'); warm.add(P.group); keep.push(P.group); } catch (e) { /* optional */ } }
+      try { const A = buildArea('mire_w', 3, '#ffffff', '#ffffff'); warm.add(A.group); } catch (e) { /* optional */ }
+      for (const k of ['ring', 'disc', 'pillar', 'sprite', 'beam', 'slash', 'cone', 'bubble']) { try { const m = this.vfx._get(k); m.visible = false; } catch (e) { /* optional */ } }
+      const r = buildRubbleV3('tower', 0); warm.add(r); const rc = buildRubbleV3('core', 1); warm.add(rc);
+      for (const kind of ['flood', 'ember', 'gale', 'stone', 'swamp']) { try { const z = new ZoneFx(kind, 0, 0, 5, 0); warm.add(z.group); warm.add(z.root); } catch (e) { /* optional */ } }
+      this._sync(0);
+      // vfx pool objects are invisible: compile them explicitly
+      const hidden = []; this.scene.traverse((o) => { if (!o.visible && (o.isMesh || o.isPoints || o.isSprite)) { hidden.push(o); o.visible = true; } });
+      this.gl.compile(this.scene, this.camera); this.gl.compile(warm, this.camera, this.scene); this.gl.compile(this.overlay, this.camera);
+      for (const o of hidden) o.visible = false;
+      if (this.post) { this.post.render(this.scene, this.camera, { overlay: this.overlay, fogTex: this.fog?.tex, fogDomain: this.fog?.domain }); }
+    } catch (e) { console.warn('warmup', e); }
   }
 
   _localHero() {
@@ -204,19 +250,60 @@ export class Renderer {
 
   // ───────────────────────── main loop ─────────────────────────
   render(alpha = 1, frameDt = 1 / 60) {
-    const dt = clamp(frameDt || 0, 0, 0.1); this.time += dt; this.alpha = clamp(alpha, 0, 1);
+    const rdt = clamp(frameDt || 0, 0, 0.1); this.realTime += rdt; this.alpha = clamp(alpha, 0, 1);
+    this.gl.info.autoReset = false; this.gl.info.reset();
+    // hitstop: everything animated (anims, vfx, shaders) runs on scaled time; camera keeps real time
+    this.timeScale = this.realTime < this.hitstopUntil ? 0.06 : Math.min(1, (this.timeScale || 1) + rdt * 12);
+    const dt = rdt * this.timeScale; this.time += dt; WORLD.uTime.value = this.time;
     const m = this.match;
+    const mood = this.lights.update(rdt, this.time);
     if (m) {
       this._events();
       this._sync(dt);
       for (let i = this.telegraphs.length - 1; i >= 0; i--) { const t = this.telegraphs[i]; t.update(dt, this.time, m.time ?? 0, this.vfx); if (t.done) { t.dispose(); this.telegraphs.splice(i, 1); } }
-      this.mapView?.update(this.time, dt, m, this.vfx);
+      this.mapView?.update(this.time, dt, m, this.vfx, this._ctx || (this._ctx = { near: (x, z) => Math.abs(x - this.camT.x) < 50 && Math.abs(z - this.camT.z) < 40 }));
+      this.combatFx?.update?.(dt);
+      // living map: final swell mood
+      const sw = m.finalSwell ? 1 : this.swellTele ? 0.35 : 0; this.lights.swellTarget = sw;
+      this.mapView?.terrain.setSwell(this.lights.swell);
     }
-    this._camera(dt);
+    this._camera(rdt);
     this._updIndicator();
     this.vfx.update(dt);
-    this._perf(dt);
-    this.gl.render(this.scene, this.camera);
+    this._worldUniforms(rdt);
+    this._perf(rdt);
+    this.flash = Math.max(0, this.flash - rdt * 3);
+    if (this.post) {
+      this.post.render(this.scene, this.camera, { overlay: this.overlay, mood, fogTex: this.fog?.tex, fogDomain: this.fog?.domain, fogOn: !!this.fog && !this.revealAll, time: this.time, swell: this.lights.swell, flash: this.flash * 0.35, flashColor: this.flashColor });
+    } else {
+      this.gl.autoClear = true; this.gl.render(this.scene, this.camera); this.gl.autoClear = false; this.gl.clearDepth(); this.gl.render(this.overlay, this.camera); this.gl.autoClear = true;
+    }
+    const inf = this.gl.info.render; this.stats.calls = inf.calls; this.stats.triangles = inf.triangles; this.stats.points = inf.points; this.stats.programs = this.gl.info.programs?.length || 0;
+  }
+  _worldUniforms(dt) {
+    // fog of war texture
+    if (this.fog && this.match) { this._fogAcc = (this._fogAcc || 0) + dt; if (this._fogAcc > 1 / 30) { this.fog.update(this.match, this.localTeam, this._fogAcc, this.revealAll); this._fogAcc = 0; } }
+    // ambient fields follow the camera
+    const mv = this.mapView; if (mv) { mv.ambient.update(this.camT.x, this.camT.z, this.pointScale || 400, 1 + this.lights.swell * 1.5); if (mv.halos?.mat) mv.halos.mat.uniforms.uScale.value = this.pointScale || 400; if (mv.mist) mv.mist.material.uniforms.uScale.value = this.pointScale || 400; }
+    // foliage push (units part grass/brush) + occluder fade focus
+    const pu = FOLIAGE_U.uPush.value, fo = FOLIAGE_U.uFocus.value, ba = FOLIAGE_U.uBrushA.value;
+    let n = 0; const lh = this._localHero();
+    const cand = this._pushCand || (this._pushCand = []); cand.length = 0;
+    if (lh && lh.alive) cand.push(lh);
+    if (this.match) for (const e of this.match.entities.values()) { if (cand.length >= 24) break; if (e === lh || !e.alive) continue; if (e.kind !== 'hero' && e.kind !== 'monster' && e.kind !== 'minion') continue; if (Math.abs(e.x - this.camT.x) > 34 || Math.abs(e.y - this.camT.z) > 26) continue; if (e.kind === 'minion' && cand.length > 12) continue; cand.push(e); }
+    for (const e of cand) { if (n >= 8) break; const p = this._ipos(e); const r = (e.radius || 1) * 1.9 + 0.6; pu[n++].set(p.x, p.z, r, e.kind === 'minion' ? 0.35 : 0.55); }
+    for (; n < 8; n++) pu[n].set(-999, -999, 1, 0);
+    // focus: local hero + nearest visible enemy heroes (fade trees in front of them)
+    const bs = this._v2b || (this._v2b = new THREE.Vector2()); this.gl.getDrawingBufferSize(bs); const v = this._fv || (this._fv = new THREE.Vector3());
+    let k = 0; const pr = this.gl.getPixelRatio();
+    const focus = (e) => { if (k >= 4) return; const p = this._ipos(e); v.set(p.x, 1.2, p.z).applyMatrix4(this.camera.matrixWorldInverse); const depth = -v.z; v.applyMatrix4(this.camera.projectionMatrix);
+      if (Math.abs(v.x) > 1.2 || Math.abs(v.y) > 1.2) return; fo[k++].set((v.x * 0.5 + 0.5) * bs.x, (v.y * 0.5 + 0.5) * bs.y, depth - 0.5, 70 * pr); };
+    if (lh && lh.alive) focus(lh);
+    if (this.match?.heroes) for (const h of this.match.heroes) if (h !== lh && h.alive && this._visible(h)) focus(h);
+    for (; k < 4; k++) fo[k].set(-9999, -9999, 0, 0);
+    // brush the local hero stands in turns see-through
+    const br = this.match?.map?.brush || []; const inB = lh && lh.alive ? br.findIndex((b) => (lh.x - b.x) ** 2 + (lh.y - b.y) ** 2 < b.r * b.r) : -1;
+    for (let i = 0; i < ba.length; i++) ba[i] += ((i === inB ? 0.62 : 0) - ba[i]) * (1 - Math.exp(-dt * 8));
   }
 
   _perf(dt) {
@@ -229,23 +316,57 @@ export class Renderer {
 
   _camera(dt) {
     const lh = this._localHero();
-    let tx, tz;
-    if (this.follow && lh) { const p = this._ipos(lh); tx = p.x + this.panOff.x; tz = p.z + this.panOff.y; }
-    else { tx = this.camFree.x; tz = this.camFree.z; }
+    let tx, tz; const phone = this.h < 500 && this.camera.aspect > 1;
+    if (this.follow && lh) {
+      const p = this._ipos(lh);
+      // smoothed hero velocity → gentle look-ahead in the movement direction
+      if (this._lastHP && dt > 0) { const vx = (p.x - this._lastHP.x) / dt, vz = (p.z - this._lastHP.z) / dt; const sp = Math.hypot(vx, vz); if (sp < 40) { const k = 1 - Math.exp(-dt * 4); this.heroVel.x += (vx - this.heroVel.x) * k; this.heroVel.y += (vz - this.heroVel.y) * k; } }
+      this._lastHP = this._lastHP || { x: 0, z: 0 }; this._lastHP.x = p.x; this._lastHP.z = p.z;
+      const la = lh.alive ? 0.22 : 0; const lx = clamp(this.heroVel.x * la, -3, 3), lz = clamp(this.heroVel.y * la, -2.2, 2.2);
+      const kk = 1 - Math.exp(-dt * 2.5); this.lookAhead.x += (lx - this.lookAhead.x) * kk; this.lookAhead.y += (lz - this.lookAhead.y) * kk;
+      // framing: hero sits slightly left of centre (ability cluster lives bottom-right)
+      const fx = phone ? 3.2 : 1.6, fz = phone ? 1.4 : 0.6;
+      tx = p.x + this.panOff.x + this.lookAhead.x + fx; tz = p.z + this.panOff.y + this.lookAhead.y + fz;
+    } else { tx = this.camFree.x; tz = this.camFree.z; this._lastHP = null; }
     const W = this.match?.map?.width || 240, H = this.match?.map?.height || 160;
     tx = clamp(tx, -4, W + 4); tz = clamp(tz, 0, H + 6);
-    const k = 1 - Math.exp(-dt * 9);
-    this.camT.x = lerp(this.camT.x, tx, k); this.camT.z = lerp(this.camT.z, tz, k);
-    if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 2.5);
-    const sh = (this.shake || 0) * 0.6;
-    const D = this.camDist * clamp(0.75 / this.camera.aspect, 1, 1.6) * (this.h < 450 && this.camera.aspect > 1 ? 0.88 : 1); // phones in landscape: zoom in a bit
-    this.camera.position.set(this.camT.x + (Math.random() - 0.5) * sh, D * Math.sin(PITCH), this.camT.z + D * Math.cos(PITCH) + (Math.random() - 0.5) * sh);
-    this.camera.lookAt(this.camT.x, 0, this.camT.z);
-    // light follows view center (texel-snapped)
-    const cx = this.camT.x, cz = this.camT.z - 4, snap = 96 / this.sun.shadow.mapSize.x;
-    const sx = Math.round(cx / snap) * snap, sz = Math.round(cz / snap) * snap;
-    this.sun.position.set(sx - 30, 70, sz + 38); this.sun.target.position.set(sx, 0, sz); this.sun.target.updateMatrixWorld();
+    // critically damped spring (no jitter at any sim rate; frame-rate independent)
+    const w = this.follow ? 9 : 14; const dx = this.camT.x - tx, dz = this.camT.z - tz;
+    if (Math.abs(dx) > 40 || Math.abs(dz) > 40) { this.camT.x = tx; this.camT.z = tz; this.camVel.set(0, 0); }
+    else {
+      const e = Math.exp(-w * dt); const jx = (this.camVel.x + w * dx) * dt, jz = (this.camVel.y + w * dz) * dt;
+      this.camVel.x = (this.camVel.x - w * jx) * e; this.camVel.y = (this.camVel.y - w * jz) * e;
+      this.camT.x = tx + (dx + jx) * e; this.camT.z = tz + (dz + jz) * e;
+    }
+    // impact kick: under-damped spring offset
+    const kw = 22, kd = 9; let left = Math.min(dt, 0.1);
+    while (left > 1e-5) { const h = Math.min(left, 1 / 240); left -= h; // substepped semi-implicit Euler: stable at any frame time
+      this.camKickV.x += (-kw * kw * this.camKick.x - 2 * kd * this.camKickV.x) * h; this.camKickV.y += (-kw * kw * this.camKick.y - 2 * kd * this.camKickV.y) * h;
+      this.camKick.x += this.camKickV.x * h; this.camKick.y += this.camKickV.y * h; }
+    const kl = Math.hypot(this.camKick.x, this.camKick.y); if (kl > 1.5) { this.camKick.multiplyScalar(1.5 / kl); this.camKickV.multiplyScalar(0.5); }
+    if (!Number.isFinite(this.camKick.x + this.camKick.y + this.camKickV.x + this.camKickV.y)) { this.camKick.set(0, 0); this.camKickV.set(0, 0); }
+    // trauma shake (legacy `shake` adds trauma)
+    if (this.shake > 0) { this.trauma = Math.min(1, Math.max(this.trauma, this.shake * 0.55)); this.shake = 0; }
+    this.trauma = Math.max(0, this.trauma - dt * 1.6);
+    const tr = this.trauma * this.trauma, t = this.realTime;
+    const sx = tr * 0.9 * (Math.sin(t * 37.1) * 0.6 + Math.sin(t * 61.7 + 1.3) * 0.4), sz = tr * 0.9 * (Math.sin(t * 41.3 + 2.1) * 0.6 + Math.sin(t * 57.9 + 0.7) * 0.4);
+    const D = this.camDist * clamp(0.75 / this.camera.aspect, 1, 1.6) * (phone ? 0.88 : 1);
+    const cx = this.camT.x + this.camKick.x + sx, cz = this.camT.z + this.camKick.y + sz;
+    this.camera.position.set(cx, D * Math.sin(PITCH), cz + D * Math.cos(PITCH));
+    this.camera.lookAt(cx, 0, cz);
+    if (tr > 0.001) this.camera.rotateZ(tr * 0.012 * Math.sin(t * 29.0));
+    this.camera.updateMatrixWorld();
+    // sun follows the view (light-space texel snapped) + view-space sun dir for rims
+    this.lights.fit(this.camera, this.camT.x + 2, this.camT.z - 6, this.quality);
   }
+  /** camera kick from an impact at (x,y) with strength 0..~3 (pushes view away from the hit) */
+  kick(x, y, strength = 1) {
+    let dx = this.camT.x - x, dz = this.camT.z - y; const l = Math.hypot(dx, dz);
+    if (l < 1e-3) { const a = Math.random() * PI * 2; dx = Math.cos(a); dz = Math.sin(a); } else { dx /= l; dz /= l; }
+    const k = Math.min(3, strength) * 5; this.camKickV.x += dx * k; this.camKickV.y += dz * k;
+    this.trauma = Math.min(1, this.trauma + strength * 0.18);
+  }
+  hitstop(duration = 0.06) { this.hitstopUntil = Math.max(this.hitstopUntil, this.realTime + Math.min(0.25, duration)); this.timeScale = 0.06; }
 
   _ipos(e) {
     const a = this.alpha ?? 1; let px = e.prevX ?? e.x, py = e.prevY ?? e.y;
@@ -278,8 +399,12 @@ export class Renderer {
     return Math.abs(x - this.camT.x) < 60 && Math.abs(y - this.camT.z) < 50;
   }
   _event(ev) {
+    if (this.combatFx?.onEvent?.(ev)) return;
     const V = this.vfx;
     switch (ev.t) {
+      case 'hitstop': this.hitstop(ev.duration ?? 0.06); return;
+      case 'impact': { if (this._evVisible(ev.x ?? this.camT.x, ev.y ?? this.camT.z)) this.kick(ev.x ?? this.camT.x, ev.y ?? this.camT.z, ev.strength ?? 1); return; }
+      case 'finalswell': { this.swellTele = true; this.trauma = 1; this.flash = 1; this.flashColor.set('#ff6a3a'); return; }
       case 'damage': {
         const t = this._ent(ev.targetId); if (!t) return;
         const v = this.views.get(ev.targetId); if (v) { v.flash = 1; }
@@ -304,7 +429,7 @@ export class Renderer {
         if (s.kind === 'hero' && !s.def?.ranged) {
           const ang = Math.atan2(t.y - s.y, t.x - s.x); const p = this._ipos(s);
           this._later(0.12, () => { V.slash(p.x + Math.cos(ang) * 1.0, 1.3, p.z + Math.sin(ang) * 1.0, ang, { color: c.vfx, r: 2.0 + (s.radius || 1) * 0.5, flip: v && v.atk % 2, alpha: 0.6 + 0.4 * this._int(c) }); });
-        } else if (s.kind === 'tower') { const p = this._ipos(s); V.flash(p.x, 6.4, p.z, { color: teamColor(s.team), size: 5, dur: 0.3 }); }
+        } else if (s.kind === 'tower') { const tv = this.views.get(ev.srcId); if (tv) { tv.charge = 1; tv.chargeT = 0; tv.chargeDur = ev.windup || 0.15; tv.chargeTarget = ev.targetId; } }
         break;
       }
       case 'cast': {
@@ -357,6 +482,7 @@ export class Renderer {
       case 'mapchange': {
         const z = ev.zone; if (!z) return;
         const phase = ev.phase || (ev.at != null && ev.at > (this.match.time ?? 0) ? 'telegraph' : 'apply');
+        if (ev.kind === 'finalswell') { this.swellTele = true; this.trauma = Math.max(this.trauma, phase === 'telegraph' ? 0.45 : 1); if (phase !== 'telegraph') { this.flash = 1; this.flashColor.set('#ff6a3a'); } return; }
         if (this._evVisible(z.x, z.y)) this.shake = Math.max(this.shake || 0, phase === 'telegraph' ? 0.25 : 1.1);
         if (phase === 'telegraph') { const t = new TelegraphFx(ev.kind, z.x, z.y, z.r, ev.at ?? (this.match.time + 5), ev.team ?? 2); this.scene.add(t.group); this.telegraphs.push(t); }
         else {
@@ -477,7 +603,7 @@ export class Renderer {
   // ───────────────────────── entity sync ─────────────────────────
   _sync(dt) {
     const m = this.match; const seen = this._seen || (this._seen = new Set()); seen.clear();
-    this.minions.begin(); this.bars.begin(this.camera);
+    this.minions.begin(); this.bars.begin(this.camera); this._bn = 0;
     const lh = this._localHero();
     const handle = (e) => { if (seen.has(e.id)) return; seen.add(e.id); let v = this.views.get(e.id); if (!v) { v = this._makeView(e); if (!v) return; this.views.set(e.id, v); } v.e = e; this._updateView(v, e, dt, lh); };
     for (const e of m.entities.values()) handle(e);
@@ -491,15 +617,17 @@ export class Renderer {
       else { v.group.scale.multiplyScalar(0.85); }
     }
     this.minions.end(); this.bars.end();
+    this.blobMesh.count = this._bn; this.blobMesh.instanceMatrix.needsUpdate = true;
   }
+  _uh(x, z) { return this.mapView ? this.mapView.unitHeight(x, z) : 0; }
 
   _makeView(e) {
     const model = e.visual?.model || '';
     switch (e.kind) {
       case 'hero': return this._makeHero(e);
       case 'minion': return { kind: 'minion', type: model || 'minion_' + (e.minionType || 'melee'), rot: PI / 2 - (e.facing || 0), flash: 0, lag: e.hp, height: model === 'minion_siege' ? 2.0 : 1.9 };
-      case 'tower': { const rig = buildTower(e.team); const g = new THREE.Group(); g.add(rig.root); this.scene.add(g); return { kind: 'tower', group: g, rig, height: 8.6, flash: 0, lag: e.hp }; }
-      case 'core': { const rig = buildCore(e.team); const g = new THREE.Group(); g.add(rig.root); this.scene.add(g); return { kind: 'core', group: g, rig, height: 11, flash: 0, lag: e.hp }; }
+      case 'tower': { const rig = buildTowerV3(e.team); const g = new THREE.Group(); g.add(rig.root); this.scene.add(g); return { kind: 'tower', group: g, rig, height: 9.6, flash: 0, lag: e.hp, charge: 0 }; }
+      case 'core': { const rig = buildCoreV3(e.team); const g = new THREE.Group(); g.add(rig.root); this.scene.add(g); return { kind: 'core', group: g, rig, height: 12, flash: 0, lag: e.hp }; }
       case 'monster': {
         const mt = e.monsterType || model; const el = e.element ?? e.visual?.element;
         const rig = buildMonster(mt, el); const g = new THREE.Group(); g.add(rig.outer || rig.root); this.scene.add(g);
@@ -592,7 +720,9 @@ export class Renderer {
           if (moving) { const ph = this.time * 13 + e.id; tilt = Math.sin(ph) * 0.09; lift = Math.abs(Math.cos(ph)) * 0.12; }
           if (st === 'attack') { const k = clamp(at / 0.35, 0, 1), s = Math.sin(k * PI); tiltX = s * 0.35; ox = Math.sin(v.rot) * s * 0.4; oz = Math.cos(v.rot) * s * 0.4; }
         }
-        this.minions.push(v.type, { x: p.x + ox, z: p.z + oz, rot: v.rot, lift, tilt, tiltX, scale: scale * (v.type === 'minion_siege' ? 1.1 : 1), flash: v.flash, team: e.team });
+        const uy = this._uh(p.x, p.z);
+        this.minions.push(v.type, { x: p.x + ox, z: p.z + oz, rot: v.rot, lift: lift + uy, tilt, tiltX, scale: scale * (v.type === 'minion_siege' ? 1.1 : 1), flash: v.flash, team: e.team, id: e.id, moving, state: e.anim?.state, at: e.anim?.t || 0, ground: uy });
+        if (e.alive) this._blob(p.x, p.z, (e.radius || 0.8) * 1.0, uy);
         if (e.alive && e.hp < e.maxHp) this.bars.bar({ x: p.x, y: v.height + 0.35, z: p.z, w: 1.6, h: 0.2, hp: e.hp, max: e.maxHp, lag: v.lag, shieldAmt: e.shield, color: e.team === this.localTeam ? ALLY_HP : ENEMY_HP });
         return;
       }
@@ -600,14 +730,19 @@ export class Renderer {
         v.group.position.set(e.x, 0, e.y); const b = v.rig.bones;
         if (!e.alive) { this._toRubble(v, true); return; }
         b.crystal.rotation.y = this.time * 0.8; b.crystal.position.y = b.crystal.userData.rest.p.y + Math.sin(this.time * 1.5) * 0.25;
-        if (b.ring) { b.ring.rotation.y = -this.time * 0.6; b.ring.rotation.x = Math.sin(this.time * 0.7) * 0.2; }
+        if (b.ring) { b.ring.rotation.y = -this.time * (v.kind === 'core' ? 0.35 : 0.6); b.ring.rotation.x = Math.sin(this.time * 0.7) * 0.12; }
+        if (b.rune) b.rune.rotation.y = this.time * 0.06;
+        if (v.kind === 'tower') this._towerCharge(v, e, dt);
+        else { const hp = e.hp / Math.max(1, e.maxHp); v.rig.beam.material.uniforms.uA.value = 0.25 + 0.3 * hp + 0.1 * Math.sin(this.time * 3); v.rig.big.material.emissiveIntensity = 0.35 + 0.25 * hp + 0.1 * Math.sin(this.time * 2.2) + v.flash * 1.2; }
         v.rig.mat.userData.u.flash.value = v.flash * 0.25;
+        this._blob(e.x, e.y, v.kind === 'core' ? 6 : 3.2);
         this.bars.bar({ x: e.x, y: v.height, z: e.y, w: v.kind === 'core' ? 7 : 4.6, h: 0.42, hp: e.hp, max: e.maxHp, lag: v.lag, shieldAmt: e.shield, color: e.team === this.localTeam ? ALLY_HP : ENEMY_HP });
         return;
       }
       case 'monster': case 'summon': {
         v.group.visible = vis; if (!vis) return;
-        v.group.position.set(p.x, 0, p.z);
+        const uy = this._uh(p.x, p.z); v.group.position.set(p.x, uy, p.z);
+        if (e.alive) this._blob(p.x, p.z, (e.radius || 1) * (v.kind === 'monster' ? 1.1 : 0.9), uy);
         v.rot = angLerp(v.rot, PI / 2 - facing, 1 - Math.exp(-dt * 8)); v.group.rotation.y = v.rot;
         const anim = this._anim(e, v);
         if (v.wolf) poseRig(v.rig, anim, this.time, moving);
@@ -663,7 +798,8 @@ export class Renderer {
     if (invis) op = ally ? 0.38 : 0.5;
     if (!e.alive) { const dt0 = e.anim?.state === 'dead' ? e.anim.t : 2; op = Math.min(op, clamp(1 - (dt0 - 2.0) / 1.0, 0, 1)); if (op <= 0.01) { g.visible = false; this._statusFx(v, e, p, dt, false); return; } }
     this._setOpacity(v, op);
-    g.position.set(p.x, 0, p.z);
+    const uy = this._uh(p.x, p.z); g.position.set(p.x, uy, p.z);
+    if (e.alive && op > 0.5) this._blob(p.x, p.z, (e.radius || 1.2) * 0.95, uy);
     const fac = PI / 2 - (e.facing ?? 0);
     v.rot = angLerp(v.rot, fac, 1 - Math.exp(-dt * 16)); g.rotation.y = v.rot;
     const anim = this._anim(e, v);
@@ -720,8 +856,25 @@ export class Renderer {
   _toRubble(v, keepView) {
     if (v.rubbled) return; v.rubbled = true;
     const pos = v.group.position.clone();
-    const r = buildRubble(v.kind === 'core' ? 2.4 : 1.4); r.position.copy(pos); this.scene.add(r); this.rubble.push(r);
+    const r = buildRubbleV3(v.kind, v.e?.team ?? v.rig.team ?? 2); r.position.copy(pos); this.scene.add(r); this.rubble.push(r);
     v.group.visible = false;
+    if (this._evVisible(pos.x, pos.z)) { this.trauma = Math.min(1, this.trauma + 0.7); for (let i = 0; i < 18; i++) this.vfx.norm?.emit?.({ x: pos.x + (Math.random() - 0.5) * 4, y: 0.5 + Math.random() * 3, z: pos.z + (Math.random() - 0.5) * 4, vx: (Math.random() - 0.5) * 3, vy: 1 + Math.random() * 2, vz: (Math.random() - 0.5) * 3, life: 2.2, size: 2.2, size1: 4.5, color: '#9a9288', color1: '#6a645e', alpha: 0.55, drag: 1.2, grav: -0.3 }); }
+  }
+  _towerCharge(v, e, dt) {
+    const R = v.rig; const tc = teamColor(e.team);
+    if (v.charge > 0) {
+      v.chargeT += dt; const k = clamp(v.chargeT / Math.max(0.05, v.chargeDur), 0, 1);
+      const t = this._ent(v.chargeTarget);
+      if (k < 1 && t && t.alive) { // charging: orb swells + laser sight to the target
+        if (!v._laser || v._laserDone) { const p = this._ipos(t); v._laser = this.vfx.beam(e.x, 7.75, e.y, p.x, 1.2, p.z, { color: tc, width: 0.09, dur: Math.max(0.08, v.chargeDur - v.chargeT), alpha: 0.9 }); v._laserDone = false; }
+        if (Math.random() < dt * 60) { const a = Math.random() * PI * 2, r = 1.6; this.vfx.add.emit({ x: e.x + Math.cos(a) * r, y: 7.75 + (Math.random() - 0.5) * 1.6, z: e.y + Math.sin(a) * r, vx: -Math.cos(a) * r * 6, vy: 0, vz: -Math.sin(a) * r * 6, life: 0.16, size: 0.5, size1: 0.1, color: '#ffffff', color1: tc, alpha: 1, drag: 0 }); }
+      }
+      if (k >= 1 && v.charge === 1) { v.charge = 0.999; v._laserDone = true; if (this._evVisible(e.x, e.y)) { this.vfx.flash(e.x, 7.75, e.y, { color: tc, size: 7, dur: 0.25 }); this.vfx.flash(e.x, 7.75, e.y, { color: '#ffffff', size: 3, dur: 0.15 }); } }
+      if (k >= 1) v.charge = Math.max(0, v.charge - dt * 4);
+      const c = k < 1 ? ease(k) : v.charge;
+      R.bones.crystal.scale.setScalar(1 + c * 0.45); R.halo.material.opacity = 0.75 + c * 0.25; R.halo.scale.setScalar(5.2 * (1 + c * 0.9));
+      R.shell.material.emissiveIntensity = 0.55 + c * 2.2; R.core.material.color.set(tc).lerp(this._white || (this._white = new THREE.Color(1, 1, 1)), 0.5 + c * 0.5);
+    }
   }
   _disposeView(v) {
     if (v.zone) v.zone.dispose();

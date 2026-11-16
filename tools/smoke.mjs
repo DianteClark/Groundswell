@@ -1,4 +1,5 @@
 // Per-ability smoke test: each hero casts each slot at a nearby enemy; verify events.
+import { TICK_RATE } from '../src/sim/constants.js';
 import { Match } from '../src/sim/match.js';
 import { HEROES } from '../src/data/heroes/index.js';
 let fail = 0;
@@ -22,9 +23,9 @@ for (const H of HEROES) {
       const tgt = slot === 'w' && (H.id === 'pip') || (slot === 'r' && H.id === 'pip') ? ally : foe;
       const evs = [];
       m.issue('me', { type: 'cast', slot, x: tgt.x, y: tgt.y, targetId: tgt.id });
-      for (let i = 0; i < 30 * 4; i++) {
+      for (let i = 0; i < TICK_RATE * 4; i++) {
         m.tick(); evs.push(...m.events);
-        if (i === 10 && ['kaela', 'nyx'].includes(H.id) && slot === 'q') m.issue('me', { type: 'cast', slot, x: foe.x + 3, y: foe.y }); // recast
+        if (i === Math.round(TICK_RATE / 3) && ['kaela', 'nyx'].includes(H.id) && slot === 'q') m.issue('me', { type: 'cast', slot, x: foe.x + 3, y: foe.y }); // recast
         if (i === 50 && H.id === 'lumi' && slot === 'r') {} 
       }
       const casted = evs.some(e => e.t === 'cast' && e.srcId === me.id && e.slot === slot);

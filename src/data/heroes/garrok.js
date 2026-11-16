@@ -5,7 +5,7 @@ const huntedBy = (api, h, t) => !!t.statuses?.some(s => s.key === 'alpha_mark' &
 
 function wolfStats(h, temp) {
   const L = h.level - 1, b = temp ? 0 : (h.data.bond || 0);
-  return { maxHp: 220 + 35 * L + 20 * b, power: 12 + 1.8 * L + 1.5 * b, armor: 12 + 1.5 * L, attackRange: 2.2, attackSpeed: 0.85, moveSpeed: Math.max(10.5, h.stats.moveSpeed * 1.05), hpRegen: 2 };
+  return { maxHp: 220 + 35 * L + 20 * b, power: 10 + 1.5 * L + 1.25 * b, armor: 12 + 1.5 * L, attackRange: 2.2, attackSpeed: 0.85, moveSpeed: Math.max(10.5, h.stats.moveSpeed * 1.05), hpRegen: 2 };
 }
 
 function spawnWolf(api, h, temp = false) {
@@ -29,19 +29,20 @@ function spawnWolf(api, h, temp = false) {
 export default {
   id: 'garrok', name: 'Garrok', title: 'Beastcaller', role: 'Jungler', difficulty: 2,
   color: '#b5651d', lore: 'Raised by the dire-pack of the Hollow Wilds, Garrok still hunts with his oldest brother at his side.',
-  base: { maxHp: 620, power: 55, armor: 27, attackRange: 2.6, attackSpeed: 0.78, moveSpeed: 10.1, hpRegen: 3 },
+  base: { maxHp: 600, power: 53, armor: 27, attackRange: 2.6, attackSpeed: 0.78, moveSpeed: 10.1, hpRegen: 3 },
   growth: { maxHp: 85, power: 3.8, armor: 3, attackSpeed: 0.02, hpRegen: 0.25 },
-  attackRatio: 1, ranged: false, projectile: null,
+  attackRatio: 1, ranged: false, projectile: null, windup: 0.24,
   abilities: {
     passive: { name: 'Pack Bond', desc: 'Garrok fights with his wolf. Each camp cleared adds Bond (+2 for big camps, max 20), permanently strengthening the wolf. Both deal +10% damage to monsters. The wolf revives after 25s.' },
     q: {
-      name: 'Pack Leap', desc: 'Garrok and his wolf leap to a point (8m), dealing 55 (+16/lvl, +55% Power) around Garrok and slowing 30% for 1s. The wolf\'s landing adds 40% damage.',
+      name: 'Pack Leap Landing resets your attack timer.', desc: 'Garrok and his wolf leap to a point (8m), dealing 55 (+16/lvl, +55% Power) around Garrok and slowing 30% for 1s. The wolf\'s landing adds 40% damage.',
       cd: 9, range: 8, targeting: 'point', tags: ['engage', 'farm', 'escape'],
       bot: { kind: 'leap', engage: true, escape: true, farm: true, radius: 3.2 },
       cast(api, h, aim) {
         const tx = aim.x, ty = aim.y;
         api.vfx('garrok_q', { x: h.x, y: h.y, tx, ty, radius: 3.2, team: h.team, srcId: h.id });
-        api.dash(h, tx, ty, 28, { passWalls: true, onArrive: () => {
+        api.dash(h, tx, ty, 32, { passWalls: true, onArrive: () => {
+          api.resetAttack(h);
           api.vfx('garrok_q_hit', { x: h.x, y: h.y, radius: 3.2, team: h.team, srcId: h.id });
           for (const e of api.enemiesInRadius(h, h.x, h.y, 3.2)) {
             const dealt = api.hit(h, e, api.scale(h, 55, 16, 0.55), 'garrok_q');
@@ -52,7 +53,7 @@ export default {
         const w = wolfOf(api, h);
         if (w) {
           const ox = tx - aim.dirX * 1.2 + aim.dirY * 1.2, oy = ty - aim.dirY * 1.2 - aim.dirX * 1.2;
-          api.dash(w, ox, oy, 30, { passWalls: true, onArrive: () => {
+          api.dash(w, ox, oy, 34, { passWalls: true, onArrive: () => {
             for (const e of api.enemiesInRadius(h, w.x, w.y, 2.6)) { api.hit(w, e, api.scale(h, 60, 18, 0.6) * 0.4, 'garrok_q'); if (api.aug(h, 3, 'a')) api.stun(h, e, 0.5); }
           } });
         }
@@ -103,7 +104,7 @@ export default {
       const d = h.data; d._now = api.time;
       const w = wolfOf(api, h);
       if (!w) { if (d.wolfRespawnAt == null) d.wolfRespawnAt = api.time + 25; else if (api.time >= d.wolfRespawnAt && h.alive) spawnWolf(api, h); }
-      else if (api.m.tickCount % 15 === 0) {
+      else if (api.m.tickCount % api.ticks(0.5) === 0) {
         const st = wolfStats(h, w.data.temp); const oldMax = w.baseStats.maxHp;
         Object.assign(w.baseStats, st); w.maxHp = st.maxHp; if (st.maxHp > oldMax) w.hp += st.maxHp - oldMax;
       }

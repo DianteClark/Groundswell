@@ -26,8 +26,8 @@ export function makeHeroMat(opts = {}) {
     rimColor: { value: new THREE.Color(opts.rim ?? 0xffffff) }, rimStrength: { value: opts.rimStrength ?? 0.5 },
     flash: { value: 0 }, flashColor: { value: new THREE.Color(1, 1, 1) },
     dissolve: { value: 0 }, dissolveColor: { value: new THREE.Color(opts.dissolveColor ?? '#ffd27a') },
-    glowBoost: { value: opts.glowBoost ?? 2.2 }, tint: { value: new THREE.Color(1, 1, 1) }, tintAmt: { value: 0 },
-    ambientLift: { value: opts.ambientLift ?? 0.16 },
+    glowBoost: { value: opts.glowBoost ?? 1.5 }, tint: { value: new THREE.Color(1, 1, 1) }, tintAmt: { value: 0 },
+    ambientLift: { value: opts.ambientLift ?? 0.07 },
   };
   m.userData.u = u;
   m.defaultAttributeValues = { ...(m.defaultAttributeValues || {}), color: [1, 1, 1], aMat: [0, 0, 0.8] };

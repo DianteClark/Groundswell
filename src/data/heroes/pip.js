@@ -19,7 +19,7 @@ function spawnBolt(api, h) {
       if (best) { const dx = best.x - ward.x, dy = best.y - ward.y, l = Math.hypot(dx, dy) || 1; tx = ward.x + dx / l * 2.4; ty = ward.y + dy / l * 2.4; }
       if (Math.hypot(tx - s.x, ty - s.y) > 0.6) api.m._followTo(s, tx, ty, 0.4); else s.anim.state = 'idle';
       // guard ward
-      api.tempHook(ward, { modifyDamageTaken(aa, self, src, info) { if (src && src.team !== self.team) info.amount *= 0.91; } }, 0.25, 'pip_guard');
+      api.tempHook(ward, { modifyDamageTaken(aa, self, src, info) { if (src && src.team !== self.team) info.amount *= 0.9; } }, 0.25, 'pip_guard');
       api.setBuff(ward, 'pip_guard', 0.25, { sourceId: h.id });
       if ((h.data.boltShieldAt || -99) + 9 <= api.time && ward.lastDamagedAt && api.time - ward.lastDamagedAt < 0.5 && ward.hp < ward.maxHp * 0.92) {
         h.data.boltShieldAt = api.time;
@@ -33,12 +33,12 @@ function spawnBolt(api, h) {
 }
 
 function wrench(api, h, from, t, bouncesLeft) {
-  api.homing({ src: h, x: from.x, y: from.y, target: t, speed: 34, visual: 'pip_q', onHit: (tt) => {
+  api.homing({ src: h, x: from.x, y: from.y, target: t, speed: 42, visual: 'pip_q', onHit: (tt) => {
     if (tt.team === h.team) {
-      api.heal(tt, api.scale(h, 40, 13, 0.3) * (api.aug(h, 3, 'b') ? 1.35 : 1), h);
+      api.heal(tt, api.scale(h, 44, 13, 0.33) * (api.aug(h, 3, 'b') ? 1.35 : 1), h);
       api.vfx('pip_q_heal', { x: tt.x, y: tt.y, team: h.team, srcId: h.id, targetId: tt.id });
     } else {
-      api.hit(h, tt, api.scale(h, 45, 14, 0.5), 'pip_q');
+      api.hit(h, tt, api.scale(h, 52, 15, 0.55), 'pip_q');
       api.vfx('pip_q_hit', { x: tt.x, y: tt.y, team: h.team, srcId: h.id, targetId: tt.id });
     }
     if (bouncesLeft <= 0) return;
@@ -55,13 +55,13 @@ function wrench(api, h, from, t, bouncesLeft) {
 export default {
   id: 'pip', name: 'Pip & Bolt', title: 'Tinker Duo', role: 'Support', difficulty: 2,
   color: '#3cc6e0', lore: 'Pip built Bolt to carry his tools. Bolt decided, on its own, to carry Pip\'s friends too.',
-  base: { maxHp: 560, power: 46, armor: 22, attackRange: 10.5, attackSpeed: 0.7, moveSpeed: 9.9, hpRegen: 2.6 },
-  growth: { maxHp: 80, power: 3.1, armor: 2.8, attackSpeed: 0.015, hpRegen: 0.22 },
-  attackRatio: 1, ranged: true, projectile: 'auto_pip',
+  base: { maxHp: 570, power: 49, armor: 22, attackRange: 10.5, attackSpeed: 0.7, moveSpeed: 9.9, hpRegen: 2.6 },
+  growth: { maxHp: 82, power: 3.6, armor: 2.8, attackSpeed: 0.015, hpRegen: 0.22 },
+  attackRatio: 1, ranged: true, projectile: 'auto_pip', missileSpeed: 52,
   abilities: {
-    passive: { name: 'Bolt', desc: 'Bolt the mech guards Pip\'s tethered ally: it body-blocks, reduces their damage taken by 9%, and every 9s shields them for 40 (+14/lvl, +30% Power) when hit.' },
+    passive: { name: 'Bolt', desc: 'Bolt the mech guards Pip\'s tethered ally: it body-blocks, reduces their damage taken by 10%, and every 9s shields them for 40 (+14/lvl, +30% Power) when hit.' },
     q: {
-      name: 'Wrench Toss', desc: 'Throw a wrench at a unit: allies heal 40 (+13/lvl, +30% Power), enemies take 45 (+14/lvl, +50% Power). It then bounces once to the other side (enemy ↔ ally).',
+      name: 'Wrench Toss', desc: 'Throw a wrench at a unit: allies heal 44 (+13/lvl, +33% Power), enemies take 52 (+15/lvl, +55% Power). It then bounces once to the other side (enemy ↔ ally).',
       cd: 6, range: 10, targeting: 'unit', targetTeam: 'any', tags: ['heal', 'poke'],
       bot: { kind: 'heal', poke: true },
       cast(api, h, aim) {
@@ -119,7 +119,7 @@ export default {
     onSpawn(api, h) { h.data.wardId = h.id; spawnBolt(api, h); },
     onRespawn(api, h) { h.data.wardId = h.id; spawnBolt(api, h); },
     onDeath(api, h) { const b = boltOf(api, h); if (b) api.m.remove(b); },
-    onTick(api, h) { if (!boltOf(api, h) && h.alive && (api.m.tickCount % 30 === 0)) spawnBolt(api, h); const w = wardOf(api, h); api.setResource(h, 'Guarding', w === h ? 0 : 1, 1, '#3cc6e0'); },
+    onTick(api, h) { if (!boltOf(api, h) && h.alive && (api.m.tickCount % api.ticks(1) === 0)) spawnBolt(api, h); const w = wardOf(api, h); api.setResource(h, 'Guarding', w === h ? 0 : 1, 1, '#3cc6e0'); },
   },
   bot: {
     preferredRole: 'support', comboOrder: ['w', 'q', 'r'], style: 'support',

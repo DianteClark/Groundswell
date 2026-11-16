@@ -3,7 +3,7 @@ const MAX_BARK = 6;
 const barkPer = (h) => 2.5 + 0.4 * (h.level - 1);
 
 function slamHit(api, h, t) {
-  api.hit(h, t, api.scale(h, 70, 22, 0.6) + h.maxHp * 0.04, 'bram_q');
+  api.hit(h, t, api.scale(h, 78, 24, 0.6) + h.maxHp * 0.045, 'bram_q', { heavy: t.kind === 'hero' });
   api.stun(h, t, 1.0 + (api.aug(h, 3, 'a') ? 0.4 : 0));
   if (api.aug(h, 3, 'b')) api.knockback(h, t, h.x, h.y, 4, 26);
   api.vfx('bram_q_hit', { x: t.x, y: t.y, team: h.team, srcId: h.id, targetId: t.id });
@@ -14,17 +14,17 @@ export default {
   color: '#7fb069', lore: 'An oak-hearted sentinel who swore to stand where the old forest fell — and has not moved since.',
   base: { maxHp: 740, power: 52, armor: 36, attackRange: 2.6, attackSpeed: 0.72, moveSpeed: 9.7, hpRegen: 3.5 },
   growth: { maxHp: 98, power: 3.2, armor: 3.6, attackSpeed: 0.015, hpRegen: 0.25 },
-  attackRatio: 1, ranged: false, projectile: null,
+  attackRatio: 1, ranged: false, projectile: null, windup: 0.26,
   abilities: {
     passive: { name: 'Rootbound', desc: 'Standing still builds Bark every 0.5s (max 6): each stack grants 2.5 (+0.4/lvl) Armor. Moving sheds Bark quickly. Attacks deal bonus damage equal to 3% of Bram\'s max HP.' },
     q: {
-      name: 'Shield Slam', desc: 'Dash 7m. The first enemy hit takes 70 (+22/lvl, +60% Power, +4% max HP) damage and is stunned for 1s. Missing refunds 40% of the cooldown.',
+      name: 'Shield Slam Hitting resets your attack timer.', desc: 'Dash 7m. The first enemy hit takes 78 (+24/lvl, +60% Power, +4.5% max HP) damage and is stunned for 1s. Missing refunds 40% of the cooldown.',
       cd: 9, range: 7, targeting: 'skillshot', tags: ['engage', 'cc'],
-      bot: { kind: 'dash', engage: true, radius: 1.8, speed: 32 },
+      bot: { kind: 'dash', engage: true, radius: 1.9, speed: 34 },
       cast(api, h, aim) {
         const L = 7, tx = h.x + aim.dirX * L, ty = h.y + aim.dirY * L;
         api.vfx('bram_q', { x: h.x, y: h.y, tx, ty, team: h.team, srcId: h.id, duration: 0.3 });
-        api.dashHit(h, tx, ty, { speed: 32, radius: 1.9, onHit: (t) => { slamHit(api, h, t); return true; },
+        api.dashHit(h, tx, ty, { speed: 34, radius: 2.0, onHit: (t) => { slamHit(api, h, t); api.resetAttack(h); return true; },
           onArrive: (t) => { if (!t) api.reduceCooldown(h, 'q', 9 * 0.4 * api.hasteMul(h)); } });
       },
     },

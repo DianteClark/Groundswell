@@ -36,17 +36,27 @@ function startMatch(config) {
   const resize = () => renderer.resize(window.innerWidth, window.innerHeight);
   window.addEventListener('resize', resize); resize();
 
-  let acc = 0, last = performance.now(), raf = 0, ended = false, endAt = 0;
+  // Fixed-step sim (60Hz) + render interpolation. Input is sampled ONCE PER FRAME before ticking, so a touch that
+  // arrives during frame N is applied by the very next tick. Frame deltas within 1.5ms of a whole number of ticks are
+  // snapped (vsync jitter would otherwise alternate 0/2 ticks per frame); `alpha` = fraction of the next tick elapsed.
+  // acc starts near a full tick: with snapped frame deltas it stays there, so alpha≈0.85 → the picture is only ~2.5ms behind the sim.
+  let acc = DT * 0.85, last = performance.now(), raf = 0, ended = false, endAt = 0;
+  const MAX_TICKS = 6;
   const frame = (now) => {
     raf = requestAnimationFrame(frame);
     let fdt = (now - last) / 1000; last = now;
+    if (!(fdt > 0)) fdt = 0;
     if (fdt > 0.25) fdt = 0.25;
+    const k = Math.round(fdt / DT); if (k >= 1 && Math.abs(fdt - k * DT) < 0.0015) fdt = k * DT;
+    try { input.update?.(fdt); } catch (e) { reportError(e); }
     if (!match.over) {
       acc += fdt; let n = 0;
-      while (acc >= DT && n < 8) { input.update?.(DT); match.tick(); acc -= DT; n++; }
-      if (n >= 8) acc = 0;
+      while (acc >= DT - 1e-6 && n < MAX_TICKS) { match.tick(); acc -= DT; n++; }
+      if (n >= MAX_TICKS && acc > DT) acc = DT * 0.5;   // spiral guard: drop backlog, keep smooth
+      if (acc < 0) acc = 0;
+      match.alpha = Math.min(1, acc / DT);
     } else if (!ended) { ended = true; endAt = now; }
-    try { renderer.render(match.over ? 1 : acc / DT, fdt); } catch (e) { reportError(e); }
+    try { renderer.render(match.over ? 1 : match.alpha, fdt); } catch (e) { reportError(e); }
     try { hud.update(fdt); } catch (e) { reportError(e); }
     if (ended && now - endAt > 3500) { // let the victory moment play, then results
       const m = match; endSession(); app.showResults(m, null);

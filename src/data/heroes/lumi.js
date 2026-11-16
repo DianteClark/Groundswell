@@ -39,21 +39,21 @@ function constellation(api, h, marks) {
 export default {
   id: 'lumi', name: 'Lumi', title: 'Starweaver', role: 'Mage', difficulty: 2,
   color: '#9b8cff', lore: 'A cartographer of the night sky who learned that every star she names can be pulled down.',
-  base: { maxHp: 580, power: 53, armor: 22, attackRange: 11, attackSpeed: 0.72, moveSpeed: 9.8, hpRegen: 2.2 },
+  base: { maxHp: 615, power: 54, armor: 22, attackRange: 11, attackSpeed: 0.72, moveSpeed: 9.8, hpRegen: 2.2 },
   growth: { maxHp: 86, power: 4.0, armor: 2.8, attackSpeed: 0.015, hpRegen: 0.18 },
-  attackRatio: 1, ranged: true, projectile: 'auto_lumi',
+  attackRatio: 1, ranged: true, projectile: 'auto_lumi', missileSpeed: 50,
   abilities: {
     passive: { name: 'Constellation', desc: 'Abilities leave Star Marks (6s). When 3 marks exist they link up and detonate: 60 (+20/lvl, +50% Power) to enemies on the lines or inside the triangle.' },
     q: {
-      name: 'Star Bolt', desc: 'Fire a bolt (13m) dealing 70 (+22/lvl, +75% Power) to the first enemy hit and leaving a Star Mark there.',
+      name: 'Star Bolt', desc: 'Fire a bolt (13m) dealing 80 (+24/lvl, +78% Power) to the first enemy hit and leaving a Star Mark there.',
       cd: 4.5, range: 13, targeting: 'skillshot', tags: ['poke', 'burst', 'farm'],
-      bot: { kind: 'skillshot', speed: 36, radius: 0.8, poke: true },
+      bot: { kind: 'skillshot', speed: 40, radius: 0.95, poke: true },
       cast(api, h, aim) {
         const pierce = api.aug(h, 3, 'a'); let hits = 0;
-        api.skillshot({ src: h, dirX: aim.dirX, dirY: aim.dirY, speed: 36, range: 13, radius: 0.8, visual: 'lumi_q', pierce,
+        api.skillshot({ src: h, dirX: aim.dirX, dirY: aim.dirY, speed: 40, range: 13, radius: 0.95, visual: 'lumi_q', pierce,
           onHit: (t) => {
             hits++;
-            api.hit(h, t, api.scale(h, 70, 22, 0.75), 'lumi_q');
+            api.hit(h, t, api.scale(h, 80, 24, 0.78), 'lumi_q');
             api.vfx('lumi_q_hit', { x: t.x, y: t.y, team: h.team, srcId: h.id, targetId: t.id });
             if (hits === 1 || t.kind === 'hero') addMark(api, h, t.x, t.y);
             if (t.kind === 'hero' && api.aug(h, 3, 'b') && hits === 1) api.reduceCooldown(h, 'q', 2.5);
@@ -62,18 +62,18 @@ export default {
       },
     },
     w: {
-      name: 'Gravity Well', desc: 'After 1s, collapse a well (4.5m) that yanks enemies to its center, dealing 50 (+15/lvl, +40% Power) and slowing 35% for 1.5s. Always leaves a Star Mark. Lumi gains a 40 (+14/lvl, +30% Power) shield and 20% Move Speed for 2s.',
+      name: 'Gravity Well', desc: 'After 0.85s, collapse a well (4.5m) that yanks enemies to its center, dealing 60 (+17/lvl, +45% Power) and slowing 35% for 1.5s. Always leaves a Star Mark. Lumi gains a 40 (+14/lvl, +30% Power) shield and 20% Move Speed for 2s.',
       cd: 11, range: 11, targeting: 'area', tags: ['cc', 'zone'],
-      bot: { kind: 'zone', radius: 4.5, delay: 1.0 },
+      bot: { kind: 'zone', radius: 4.5, delay: 0.85 },
       cast(api, h, aim) {
-        const delay = api.aug(h, 6, 'a') ? 0.6 : 1.0;
+        const delay = api.aug(h, 6, 'a') ? 0.5 : 0.85;
         api.speed(h, 0.2, 2, 'lumi_w'); api.shield(h, api.scale(h, 40, 14, 0.3), 2.5, 'lumi_w', h);
         api.vfx('lumi_w', { x: aim.x, y: aim.y, radius: 4.5, duration: delay, team: h.team, srcId: h.id });
         api.delayed({ src: h, x: aim.x, y: aim.y, radius: 4.5, delay, visual: 'lumi_w',
           onBlast: (es, a) => {
             api.vfx('lumi_w_hit', { x: a.x, y: a.y, radius: 4.5, team: h.team, srcId: h.id });
             for (const e of es) {
-              api.hit(h, e, api.scale(h, 50, 15, 0.4), 'lumi_w');
+              api.hit(h, e, api.scale(h, 60, 17, 0.45), 'lumi_w');
               api.pull(h, e, a.x, a.y, 22, 0.8);
               if (api.aug(h, 6, 'b')) api.stun(h, e, 0.6); else api.slow(h, e, 0.35, 1.5, 'lumi_w');
             }
@@ -103,7 +103,7 @@ export default {
   },
   augments: {
     3: { a: { name: 'Twin Star', desc: 'Q: Star Bolt pierces, hitting up to 2 enemies.' }, b: { name: 'Quick Light', desc: 'Q: hitting a champion refunds 50% of the cooldown.' } },
-    6: { a: { name: 'Event Horizon', desc: 'W: Gravity Well collapses 0.4s sooner.' }, b: { name: 'Crushing Gravity', desc: 'W: stuns for 0.6s instead of slowing.' } },
+    6: { a: { name: 'Event Horizon', desc: 'W: Gravity Well collapses 0.35s sooner.' }, b: { name: 'Crushing Gravity', desc: 'W: stuns for 0.6s instead of slowing.' } },
     9: { a: { name: 'Supernova', desc: 'R: Collapse radius +2m.' }, b: { name: 'Bright Pattern', desc: 'Passive: constellations deal 50% more damage.' } },
   },
   hooks: {

@@ -11,9 +11,9 @@ function lunge(api, h, aim, second) {
   const L = Math.max(3.5, Math.min(6, aim.dist + 1));
   const tx = h.x + aim.dirX * L, ty = h.y + aim.dirY * L;
   const isHot = hot(api, h);
-  let dmg = api.scale(h, 50, 15, 0.6) * (isHot ? 1.4 : 1) * (second && api.aug(h, 3, 'a') ? 1.4 : 1);
+  let dmg = api.scale(h, 46, 14, 0.6) * (isHot ? 1.4 : 1) * (second && api.aug(h, 3, 'a') ? 1.4 : 1);
   api.vfx(second ? 'kaela_q2' : 'kaela_q', { x: h.x, y: h.y, tx, ty, team: h.team, srcId: h.id, hot: isHot });
-  api.dashHit(h, tx, ty, { speed: 34, radius: 1.8, onHit: (t) => {
+  api.dashHit(h, tx, ty, { speed: 36, radius: 1.9, onArrive: () => api.resetAttack(h), onHit: (t) => {
     api.hit(h, t, dmg, 'kaela_q');
     if (isHot) api.slow(h, t, 0.3, 1, 'kaela_q');
   } });
@@ -23,13 +23,13 @@ function lunge(api, h, aim, second) {
 export default {
   id: 'kaela', name: 'Kaela', title: 'Ember Duelist', role: 'Fighter', difficulty: 2,
   color: '#ff6b35', lore: 'A blade-dancer who learned to fight inside a forge fire — and never quite stepped out.',
-  base: { maxHp: 640, power: 58, armor: 28, attackRange: 2.6, attackSpeed: 0.8, moveSpeed: 10.1, hpRegen: 2.8 },
+  base: { maxHp: 630, power: 56, armor: 28, attackRange: 2.6, attackSpeed: 0.8, moveSpeed: 10.1, hpRegen: 2.8 },
   growth: { maxHp: 88, power: 4.3, armor: 3, attackSpeed: 0.022, hpRegen: 0.2 },
-  attackRatio: 1, ranged: false, projectile: null,
+  attackRatio: 1, ranged: false, projectile: null, windup: 0.22,
   abilities: {
     passive: { name: 'Heat', desc: 'Attacks (+14) and abilities (+15) build Heat. At 100 Heat she Overheats for 4s: abilities are empowered, but she burns for 2% max HP/s.' },
     q: {
-      name: 'Searing Lunge', desc: 'Dash up to 6m, dealing 50 (+15/lvl, +60% Power) to enemies passed. Recast within 3s to lunge again. Hot: +40% damage and 30% slow.',
+      name: 'Searing Lunge Each lunge resets your attack timer.', desc: 'Dash up to 6m, dealing 46 (+14/lvl, +60% Power) to enemies passed. Recast within 3s to lunge again. Hot: +40% damage and 30% slow.',
       cd: 8, range: 6, targeting: 'skillshot', tags: ['engage', 'escape', 'burst'],
       bot: { kind: 'dash', engage: true, escape: true, radius: 1.8, recast: 'chase' },
       cast(api, h, aim) {
@@ -57,6 +57,7 @@ export default {
             if (isHot) api.stun(h, e, 0.75); else api.slow(h, e, 0.4, 1.25, 'kaela_w');
           }
           if (api.aug(h, 6, 'b') && blk > 0) api.heal(h, blk * 0.4, h);
+          api.resetAttack(h);
           addHeat(api, h, 15);
         });
       },
@@ -97,7 +98,7 @@ export default {
       api.setResource(h, 'Heat', Math.round(d.heat), MAX_HEAT, hot(api, h) ? '#ff3b1f' : '#ff9a4a');
     },
     onAttackHit(api, h) { addHeat(api, h, 14); },
-    modifyAutoAttack(api, h, t, info) { if (hot(api, h)) info.amount *= 1.1; },
+    modifyAutoAttack(api, h, t, info) { if (hot(api, h)) { info.amount *= 1.1; info.empowered = true; } },
     onKill(api, h, t) { if (t.kind === 'hero' && api.aug(h, 3, 'b')) { api.reduceCooldown(h, 'q', 999); const r = h.data._recast?.q; if (r) { delete h.data._recast.q; h.abilities.q.recastUntil = null; } } },
     onDeath(api, h) { h.data.heat = 0; h.data.overUntil = 0; h.data.infernoUntil = 0; },
   },

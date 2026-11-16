@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 
 const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
-const _r = new THREE.Vector3(), _u = new THREE.Vector3();
+const _r = new THREE.Vector3(), _u = new THREE.Vector3(); const _c2 = new THREE.Color(), _w = new THREE.Color(1, 1, 1);
 
 export class Bars {
   constructor(scene, cap = 512) {
@@ -29,17 +29,25 @@ export class Bars {
   // o: {x,y,z, w, h, frac, lag, shield, color, hero, level, id, ticks}
   bar(o) {
     const w = o.w, h = o.h, tot = Math.max(1, o.max + (o.shieldAmt || 0));
-    const hpF = Math.max(0, o.hp) / tot, lagF = Math.max(hpF, (o.lag ?? o.hp) / tot), shF = (o.shieldAmt || 0) / tot;
-    const pad = o.hero ? 0.12 : 0.08;
-    this._quad(o.x, o.y, o.z, 0, 0, w + pad * 2, h + pad * 2, 0x14101c);
-    this._quad(o.x, o.y, o.z, 0, 0, w, h, 0x3a3044);
-    const left = -w / 2;
-    if (lagF > hpF + 0.002) this._quad(o.x, o.y, o.z, left + w * (hpF + lagF) / 2, 0, w * (lagF - hpF), h, 0xffe0a0);
-    if (hpF > 0) this._quad(o.x, o.y, o.z, left + w * hpF / 2, 0, w * hpF, h, o.color);
-    if (hpF > 0) this._quad(o.x, o.y, o.z, left + w * hpF / 2, h * 0.28, w * hpF, h * 0.3, _c.set(o.color).lerp(new THREE.Color(1, 1, 1), 0.4).getHex());
-    if (shF > 0) this._quad(o.x, o.y, o.z, left + w * (hpF + shF / 2), 0, w * shF, h, 0xf4f4ff);
-    if (o.hero && o.max > 0) { // tick every 250 hp
-      const step = 250 / tot * w; if (step > 0.12) for (let t = left + step; t < left + w * hpF - 0.02; t += step) this._quad(o.x, o.y, o.z, t, h * 0.1, 0.04, h * 0.8, 0x14101c);
+    const hpF = Math.max(0, o.hp) / tot, lagF = Math.max(hpF, Math.min(1, (o.lag ?? o.hp) / tot)), shF = (o.shieldAmt || 0) / tot;
+    const pad = o.hero ? 0.1 : 0.07; const left = -w / 2;
+    // frame: dark outer + subtle light inner border + empty track
+    this._quad(o.x, o.y, o.z, 0, 0, w + pad * 2 + 0.06, h + pad * 2 + 0.06, 0x0b0812);
+    this._quad(o.x, o.y, o.z, 0, 0, w + pad * 2, h + pad * 2, o.hero ? 0x2a2436 : 0x1c1826);
+    this._quad(o.x, o.y, o.z, 0, 0, w, h, 0x120e1a);
+    // damage chip: bright then warm, drains toward hp
+    if (lagF > hpF + 0.002) this._quad(o.x, o.y, o.z, left + w * (hpF + lagF) / 2, 0, w * (lagF - hpF), h, 0xfff0c8);
+    if (hpF > 0) {
+      this._quad(o.x, o.y, o.z, left + w * hpF / 2, 0, w * hpF, h, o.color);
+      _c.set(o.color); _c2.copy(_c).lerp(_w, 0.45); this._quad(o.x, o.y, o.z, left + w * hpF / 2, h * 0.3, w * hpF, h * 0.32, _c2.getHex());
+      _c2.copy(_c).multiplyScalar(0.62); this._quad(o.x, o.y, o.z, left + w * hpF / 2, -h * 0.36, w * hpF, h * 0.22, _c2.getHex());
+    }
+    if (shF > 0) { this._quad(o.x, o.y, o.z, left + w * (hpF + shF / 2), 0, w * shF, h, 0xf2f4ff); this._quad(o.x, o.y, o.z, left + w * (hpF + shF / 2), -h * 0.36, w * shF, h * 0.22, 0xb8c0d8); }
+    // segment ticks: thin every 100 hp, bold every 1000 (LoL-style), only where readable
+    if (o.max > 0 && (o.hero || o.ticks)) {
+      const step = 100 / tot * w; const end = left + w * Math.min(1, hpF + shF) - 0.02;
+      if (step > 0.07) { let n = 1; for (let t = left + step; t < end; t += step, n++) { const bold = n % 10 === 0; this._quad(o.x, o.y, o.z, t, bold ? 0 : h * 0.18, bold ? 0.06 : 0.035, bold ? h : h * 0.64, 0x0b0812); } }
+      else { const s2 = 1000 / tot * w; for (let t = left + s2; t < end; t += s2) this._quad(o.x, o.y, o.z, t, 0, 0.05, h, 0x0b0812); }
     }
     if (o.hero && o.level != null) this._badge(o, w);
   }

@@ -2,7 +2,7 @@
 // OWNER: Agent A. Keep createApi(m) export and existing names working.
 // All helpers are deterministic (use api.rng()).
 import { dealDamage, heal, addShield, addStatus, removeStatus, cleanse, spawnProjectile, spawnArea, startDash, teleport, hasStatus, isTargetable, isUnit, canMove } from './combat.js';
-import { DT } from './constants.js';
+import { DT, ticks } from './constants.js';
 
 const STRUCT = (e) => e.kind === 'tower' || e.kind === 'core' || e.wall;
 
@@ -17,6 +17,8 @@ export function createApi(m) {
   const api = {
     m,
     DT,
+    /** ticks(sec): number of sim ticks in `sec` seconds — use for periodic `tickCount % N` checks. */
+    ticks,
     get time() { return m.time; },
     rng: () => m.rng(),
     hasStatus, isTargetable, isUnit, canMove, segDist,
@@ -208,6 +210,8 @@ export function createApi(m) {
       st.readyAt = m.time + v; st.cdMax = Math.max(v, 0.01); st.cd = v; st.ready = v <= 0;
     },
     reduceCooldown: (h, slot, secs) => m.reduceCooldown(h, slot, secs),
+    /** Auto-attack timer reset (next auto can start immediately). */
+    resetAttack: (h) => m.resetAttack(h),
     recastOpen: (h, slot) => { const r = h.data._recast?.[slot]; return r && r.until > m.time ? r : null; },
     /** Open a recast window. Returns a cast result ({cd}) to return from cast(). fullCd is the base cooldown (haste applied). */
     openRecast: (h, slot, window, fullCd, onExpire) => {

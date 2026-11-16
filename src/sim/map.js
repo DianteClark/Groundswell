@@ -27,11 +27,11 @@ const brush = [
 ];
 
 const towersBlue = [
-  { lane: 'top', tier: 'outer', x: 84, y: 16.5, hp: 2650 },
-  { lane: 'top', tier: 'inner', x: 41, y: 33, hp: 3000 },
-  { lane: 'bot', tier: 'outer', x: 84, y: 143.5, hp: 2650 },
-  { lane: 'bot', tier: 'inner', x: 41, y: 127, hp: 3000 },
-  { lane: 'base', tier: 'base', x: 40, y: 80, hp: 3400 },
+  { lane: 'top', tier: 'outer', x: 84, y: 16.5, hp: 2050 },
+  { lane: 'top', tier: 'inner', x: 41, y: 33, hp: 2350 },
+  { lane: 'bot', tier: 'outer', x: 84, y: 143.5, hp: 2050 },
+  { lane: 'bot', tier: 'inner', x: 41, y: 127, hp: 2350 },
+  { lane: 'base', tier: 'base', x: 40, y: 80, hp: 2700 },
 ];
 
 export const MAP = {
