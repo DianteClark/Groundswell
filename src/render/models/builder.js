@@ -95,6 +95,8 @@ export function prep(geom, color, o = {}) {
   g.computeVertexNormals();
   const n = g.attributes.position.count; const arr = new Float32Array(n * 3);
   _c.set(color);
+  // keep lit albedo below the bloom threshold (WORLD pipeline: bloom when max(rgb) > ~1 in linear HDR)
+  if (!o.glow && !o.noCap) { const mx = Math.max(_c.r, _c.g, _c.b); if (mx > 0.72) _c.multiplyScalar(0.72 / mx); }
   const jAmt = o.jitter === false ? 0 : (o.jitter ?? 0.07);
   const nrm = g.attributes.normal;
   for (let i = 0; i < n; i += 3) {

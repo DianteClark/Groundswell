@@ -372,9 +372,9 @@ export class Vfx {
   telegraph(x, z, o = {}) { // readable delayed-blast indicator: filling disc + bold rim (red-tinted for enemies)
     const r = o.r ?? 3, dur = o.dur ?? 1, col = o.enemy ? mixCol(o.color ?? '#ff3a3a', '#ff2a2a', 0.65) : (o.color ?? '#ffffff');
     const rim = this._get('teleg'); rim.material.color.set(col).multiplyScalar(HDR); rim.position.set(x, 0.11, z);
-    const fill = this._get('disc'); fill.material.color.set(col).multiplyScalar(1.2); fill.position.set(x, 0.12, z);
-    this._run(fill, dur, (e, k) => { const s = r * 2 * ease(k) * 0.98; fill.scale.set(s, 1, s); fill.material.opacity = (o.enemy ? 0.55 : 0.4) * (k < 0.95 ? 1 : (1 - k) / 0.05); if (o.follow) { const p = o.follow(); if (p) fill.position.set(p.x, 0.12, p.z); } });
-    return this._run(rim, dur, (e, k) => { const pulse = 1 + 0.03 * Math.sin(this.time * 14); rim.scale.set(r * 2 * pulse, 1, r * 2 * pulse); rim.material.opacity = (k < 0.1 ? k / 0.1 : 1) * (o.enemy ? 0.95 : 0.7) * (k < 0.95 ? 1 : (1 - k) / 0.05); if (o.follow) { const p = o.follow(); if (p) rim.position.set(p.x, 0.11, p.z); } });
+    const fill = this._get('disc'); fill.material.color.set(col); fill.position.set(x, 0.12, z);
+    this._run(fill, dur, (e, k) => { const s = r * 2 * ease(k) * 0.98; fill.scale.set(s, 1, s); fill.material.opacity = (o.enemy ? 0.32 : 0.14) * (k < 0.95 ? 1 : (1 - k) / 0.05); if (o.follow) { const p = o.follow(); if (p) fill.position.set(p.x, 0.12, p.z); } });
+    return this._run(rim, dur, (e, k) => { const pulse = 1 + 0.03 * Math.sin(this.time * 14); rim.scale.set(r * 2 * pulse, 1, r * 2 * pulse); rim.material.opacity = (k < 0.1 ? k / 0.1 : 1) * (o.enemy ? 0.9 : 0.45) * (k < 0.95 ? 1 : (1 - k) / 0.05); if (o.follow) { const p = o.follow(); if (p) rim.position.set(p.x, 0.11, p.z); } });
   }
   shockwave(x, z, o = {}) { // fast double ring + ground disc flash
     const r = o.r ?? 4; const col = o.color ?? '#ffffff';

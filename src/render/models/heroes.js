@@ -375,13 +375,13 @@ function vex(c, p) {
   return {
     R, height: 3.85, style: 'rifle', stride: 3.3, lean: 0.2, legSwing: 0.78,
     rest: { armR: [-0.95, 0.35, 0.15], foreR: [-0.9, 0, 0], armL: [-1.25, -0.55, -0.35], foreL: [-0.55, 0, 0], chest: [0, -0.1, 0], head: [0, 0.1, 0] },
-    runPose: { gun: [0.25, 0, 0], armR: [0.25, 0, 0], armL: [0.25, 0, 0] }, armSwing: 0.12,
+    runPose: { gun: [-0.55, 0.55, 0.35], 'gun@p': [0.05, 0.1, -0.15], armR: [0.35, 0, 0], armL: [0.2, 0, 0.2] }, armSwing: 0.12,
     attacks: [
       { W: { chest: [0.05, 0, 0], head: [0.06, 0, 0], gun: [-0.02, 0, 0] }, S: { 'gun@p': [0, 0.06, -0.4], gun: [-0.25, 0, 0], chest: [-0.16, 0, 0], head: [-0.1, 0, 0], 'hips@p': [0, 0, -0.12], armL: [0.15, 0, 0], armR: [0.25, 0, 0] } },
     ],
     casts: {
       q: { wind: 0.05, hold: 0.15, rec: 0.3, W: { chest: [0, 0.35, 0] }, S: { 'gun@p': [0, 0.08, -0.45], gun: [-0.35, 0, 0], chest: [-0.2, -0.25, 0], 'hips@p': [0, 0, -0.15] } },
-      w: { wind: 0.02, hold: 0.25, rec: 0.25, W: {}, S: { 'hips@p': [0, -0.6, 0], spine: [0.7, 0, 0], thighL: [-1.4, 0, 0], shinL: [1.9, 0, 0], thighR: [-1.2, 0, 0], shinR: [1.9, 0, 0], head: [0.4, 0, 0], coatL: [1.2, 0, 0], coatR: [1.2, 0, 0] }, fn: (b, A) => { const k = Math.min(1, A.t / 0.32); b.root.rotation.x += k < 1 ? Math.sin(k * PI) * 0.0 + k * PI * 2 : 0; b.root.position.y += Math.sin(Math.min(1, k) * PI) * 0.5; } },
+      w: { wind: 0.02, hold: 0.25, rec: 0.25, W: {}, S: { 'hips@p': [0, -0.6, 0], spine: [0.7, 0, 0], thighL: [-1.4, 0, 0], shinL: [1.9, 0, 0], thighR: [-1.2, 0, 0], shinR: [1.9, 0, 0], head: [0.4, 0, 0], coatL: [1.2, 0, 0], coatR: [1.2, 0, 0] }, fn: (b, A) => { const k = Math.min(1, A.t / 0.34); if (k < 1) { b.hips.rotation.x += k * PI * 2; b.hips.position.y -= Math.sin(k * PI) * 0.55; } } },
       r: { wind: 0.12, hold: 1.15, rec: 0.35, W: { 'hips@p': [0, -0.55, 0], thighL: [-1.3, 0, 0], shinL: [1.3, 0, 0], thighR: [0.15, 0, 0], shinR: [1.6, 0, 0], footR: [0.5, 0, 0], spine: [0.15, 0, 0] }, S: { 'hips@p': [0, -0.55, 0], thighL: [-1.3, 0, 0], shinL: [1.3, 0, 0], thighR: [0.15, 0, 0], shinR: [1.6, 0, 0], footR: [0.5, 0, 0], spine: [0.15, 0, 0], head: [0.15, 0, 0], gun: [-0.03, 0, 0] }, fn: (b, A) => { const t = A.t - 1.2; if (t > 0 && t < 0.4) { const k = Math.sin(Math.min(1, t / 0.4) * PI); b.gun.position.z -= 0.6 * k; b.gun.rotation.x -= 0.5 * k; b.chest.rotation.x -= 0.3 * k; } } },
     },
     muzzle: 'muzzle', castFrom: { q: 'muzzle', w: null, r: 'muzzle' },
@@ -601,7 +601,7 @@ function garrok(c, p) {
   const glowA = p.helm === 'spirit' || p.helm === 'thunder';
   // fur kilt + belt
   R.add('hips', G.tprism(0.8, 0.56, 0.74, 0.52, 0.34, 8), leather, { p: [0, -0.04, 0] });
-  for (let i = 0; i < 10; i++) { const a = (i / 10) * PI * 2; R.add('hips', G.tbox(0.24, 0.08, 0.16, 0.06, 0.6), i % 2 ? fur : dark(fur, 0.85), { p: [Math.sin(a) * 0.42, -0.35, Math.cos(a) * 0.32], r: [Math.cos(a) * 0.2, a, -Math.sin(a) * 0.2] }); }
+  for (let i = 0; i < 10; i++) { const a = (i / 10) * PI * 2; R.add('hips', G.tbox(0.24, 0.08, 0.16, 0.06, 0.6), i % 2 ? dark(fur, 0.62) : dark(fur, 0.5), { p: [Math.sin(a) * 0.42, -0.35, Math.cos(a) * 0.32], r: [Math.cos(a) * 0.2, a, -Math.sin(a) * 0.2] }); }
   belt(R, 'hips', 0.1, 0.42, 0.3, leather, metal, { bw: 0.24, bh: 0.18, h: 0.16 });
   R.add('hips', G.cbox(0.2, 0.24, 0.12, 0.04), leather, { p: [0.36, -0.08, 0.2] });
   // bare muscular torso with war paint
@@ -609,8 +609,8 @@ function garrok(c, p) {
   R.add('chest', G.tprism(0.95, 0.6, 1.2, 0.7, 0.92, 8), skin, { p: [0, 0.42, 0] });
   R.sym('chest', G.ico(0.28, 1), skin, { p: [0.22, 0.62, 0.22], s: [1.1, 0.7, 0.55] });
   for (let i = 0; i < 3; i++) R.sym('spine', G.cbox(0.16, 0.12, 0.08, 0.03), dark(skin, 0.93), { p: [0.1, 0.05 + i * 0.15, 0.27] });
-  R.sym('chest', G.cbox(0.06, 0.4, 0.04, 0.01), paint, { p: [0.18, 0.55, 0.36], r: [0, 0.3, 0.4], glow: glowA ? 1.4 : 0.3 });
-  R.sym('chest', G.cbox(0.06, 0.3, 0.04, 0.01), paint, { p: [0.32, 0.5, 0.31], r: [0, 0.5, 0.4], glow: glowA ? 1.4 : 0.3 });
+  R.sym('chest', G.cbox(0.08, 0.45, 0.04, 0.01), paint, { p: [0.18, 0.55, 0.36], r: [0, 0.3, 0.4], glow: glowA ? 1.4 : 0.7 });
+  R.sym('chest', G.cbox(0.08, 0.34, 0.04, 0.01), paint, { p: [0.32, 0.5, 0.31], r: [0, 0.5, 0.4], glow: glowA ? 1.4 : 0.7 });
   R.add('chest', G.cbox(0.12, 1.15, 0.06, 0.02), leather, { p: [0, 0.48, 0.34], r: [0, 0, 0.62] });
   for (let i = 0; i < 5; i++) R.add('chest', G.cone(0.045, 0.2, 4), antler, { p: [-0.28 + i * 0.14, 0.82 - Math.abs(i - 2) * 0.04, 0.36], r: [PI - 0.1, 0, 0] });
   // fur mantle
@@ -622,7 +622,7 @@ function garrok(c, p) {
   R.add('head', G.ico(0.3, 1), '#4a3020', { p: [0, d.headR * 0.18, d.headR * 0.62], s: [1.15, 0.8, 0.6] });
   R.add('head', G.tube([[0, d.headR * 0.1, d.headR * 0.72], [0, -0.12, d.headR * 0.72], [0, -0.3, d.headR * 0.6]], 0.11, 0.05, 5, 3), '#4a3020', {});
   R.add('head', G.band(0.08, 0.03, 0.06, 6), GOLD, { p: [0, -0.16, d.headR * 0.7], r: [0.5, 0, 0], metal: 0.9, rough: 0.3 });
-  const helm = p.helm === 'snow' ? mix(fur, '#ffffff', 0.4) : p.helm === 'spirit' ? mix(antler, '#ffffff', 0.5) : '#ece0c4';
+  const helm = p.helm === 'snow' ? mix(fur, '#c8d8e8', 0.5) : p.helm === 'spirit' ? mix(antler, '#b0c8c0', 0.5) : '#d4c6a6';
   R.add('head', G.sph(d.headR * 1.12, 9, 6, 0), helm, { p: [0, d.headR * 1.42, -0.05], s: [1.05, 0.68, 1.12] });
   R.add('head', G.tbox(0.42, 0.3, 0.26, 0.2, 0.22), helm, { p: [0, d.headR * 1.62, d.headR * 0.92], r: [PI / 2 - 0.35, 0, 0] }); // snout
   R.sym('head', G.cbox(0.13, 0.09, 0.06, 0.02), glowA ? glow : '#1a1210', { p: [0.15, d.headR * 1.45, d.headR * 0.98], glow: glowA ? 2 : 0 });
@@ -636,7 +636,7 @@ function garrok(c, p) {
   }
   arms(R, d, { upperW: 0.3, foreW: 0.28, hand: 0.22, sleeve: skin, forearm: skin, bracer: fur, glove: leather, skin });
   for (const s of ['L', 'R']) R.sym('arm' + s, G.ico(0.16, 1), skin, { p: [0.0, -0.28, 0.08], s: [1, 1.3, 0.9] });
-  legs(R, d, { thighW: 0.36, shinW: 0.32, pants: leather, boot: fur, toe: 'claw', claw: antler, bootH: 0.7, cuff: mix(fur, '#ffffff', 0.15), knee: dark(leather, 0.8) });
+  legs(R, d, { thighW: 0.36, shinW: 0.32, pants: leather, boot: dark(fur, 0.6), toe: 'claw', claw: antler, bootH: 0.7, cuff: fur, knee: dark(leather, 0.8) });
   // spear (vertical, right hand)
   R.bone('spear', 'handR', [0, -0.18, 0.06]);
   R.add('spear', G.cyl(0.055, 0.06, 3.6, 6), '#6a4a2a', { p: [0, 0.5, 0] });

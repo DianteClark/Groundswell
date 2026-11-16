@@ -235,24 +235,33 @@ export function buildSummon(model, team, colors, skinId) {
   if (/_wolf/.test(model)) { const rig = buildHero('garrok_wolf', skinId || 'garrok_default'); rig.isWolf = true; if (/alpha/.test(model)) { rig.root.scale.setScalar(1.5); rig.mat.userData.u.rimStrength.value = 1.2; rig.alpha = true; } return rig; }
   const R = new Rig(); R.bone('body');
   let height = 2.5, spin = null;
-  if (model === 'bram_wall') { // one living-bark wall segment (~r 1.45)
-    for (let i = 0; i < 4; i++) { const a = i * 1.7, rr = i ? 0.7 : 0; R.add('body', G.cone(0.7 - i * 0.08, 2.8 - i * 0.35, 5), i % 2 ? c.secondary || '#8a6238' : c.primary || '#6b4a2b', { p: [Math.cos(a) * rr, 1.4 - i * 0.15, Math.sin(a) * rr], r: [Math.sin(a) * 0.2, a, Math.cos(a) * 0.2] }); }
-    R.add('body', G.ico(0.45, 0), c.accent || '#6fbf3f', { p: [0.2, 2.5, 0.1] }); R.add('body', G.ico(0.32, 0), c.accent || '#6fbf3f', { p: [-0.5, 1.9, 0.3] });
-    R.add('body', G.dodec(0.9), c.secondary || '#8a6238', { p: [0, 0.2, 0], s: [1.3, 0.4, 1.3] });
-    R.add('body', G.box(0.08, 0.9, 0.05), glow, { p: [0, 1.2, 0.62], glow: true });
+  if (model === 'bram_wall') { // living-bark wall segment (~r 1.45): twisted trunks, roots, leaves, rune
+    const bark = c.primary || '#6b4a2b', bark2 = c.secondary || '#8a6238', leaf = c.accent || '#6fbf3f';
+    R.add('body', G.dodec(1.0), bark2, { p: [0, 0.15, 0], s: [1.4, 0.45, 1.3] });
+    for (let i = 0; i < 5; i++) { const a = i * 1.26, rr = i ? 0.62 : 0; R.add('body', G.tube([[Math.cos(a) * rr, 0, Math.sin(a) * rr], [Math.cos(a + 0.6) * rr * 0.7, 1.3, Math.sin(a + 0.6) * rr * 0.7], [Math.cos(a + 1.2) * rr * 0.5, 2.5 - i * 0.2, Math.sin(a + 1.2) * rr * 0.5]], 0.36 - i * 0.03, 0.12, 6, 5), i % 2 ? bark2 : bark, {}); }
+    for (let i = 0; i < 6; i++) { const a = (i / 6) * PI * 2; R.add('body', G.cone(0.14, 0.9, 5), bark, { p: [Math.cos(a) * 0.95, 0.12, Math.sin(a) * 0.95], r: [Math.sin(a) * 1.3, 0, -Math.cos(a) * 1.3] }); }
+    R.add('body', G.ico(0.5, 1), leaf, { p: [0.15, 2.6, 0.05], s: [1.2, 0.8, 1.1] }); R.add('body', G.ico(0.36, 1), leaf, { p: [-0.45, 2.1, 0.3] }); R.add('body', G.ico(0.3, 1), leaf, { p: [0.5, 1.8, -0.3] });
+    R.add('body', G.gem(0.12, 0.5, 4), glow, { p: [0, 1.3, 0.62], glow: 1.4 }); R.add('body', G.cbox(0.06, 0.6, 0.04, 0.01), glow, { p: [0.15, 0.9, 0.6], r: [0, 0, 0.5], glow: 1.1 });
     height = 3;
-  } else if (model === 'mire_totem') {
-    R.add('body', G.cyl(0.32, 0.4, 2.4, 6), c.wood || '#5a3e28', { p: [0, 1.2, 0] });
-    R.add('body', G.ico(0.45, 0), c.secondary || '#7a9a3a', { p: [0, 0.3, 0], s: [1.5, 0.5, 1.5] });
-    R.add('body', G.ico(0.42, 0), '#e8e0c8', { p: [0, 2.6, 0], s: [1, 1.1, 1] });
-    R.add('body', G.box(0.12, 0.1, 0.05), glow, { p: [0.15, 2.65, 0.38], glow: true }); R.add('body', G.box(0.12, 0.1, 0.05), glow, { p: [-0.15, 2.65, 0.38], glow: true });
-    R.add('body', G.cone(0.08, 0.5, 4), '#e8e0c8', { p: [0.4, 3.0, 0], r: [0, 0, -0.8] }); R.add('body', G.cone(0.08, 0.5, 4), '#e8e0c8', { p: [-0.4, 3.0, 0], r: [0, 0, 0.8] });
-    for (let i = 0; i < 3; i++) R.add('body', G.oct(0.1), vfx, { p: [Math.cos(i * 2.1) * 0.45, 1.6 - i * 0.3, Math.sin(i * 2.1) * 0.45], glow: true });
-    height = 3.3;
-  } else if (model === 'lumi_mark') {
+  } else if (model === 'mire_totem') { // carved hex totem: stacked faces, skull crown, charms
+    const wood = c.wood || '#5a3e28', moss = c.secondary || '#7a9a3a';
+    R.add('body', G.dodec(0.6), moss, { p: [0, 0.2, 0], s: [1.6, 0.5, 1.6] });
+    R.add('body', G.tprism(0.7, 0.7, 0.55, 0.55, 2.3, 7), wood, { p: [0, 1.2, 0] });
+    for (const y of [0.75, 1.55]) { R.add('body', G.cbox(0.5, 0.12, 0.1, 0.03), '#2a1a10', { p: [0, y, 0.33] }); R.sym('body', G.cbox(0.12, 0.1, 0.08, 0.02), glow, { p: [0.14, y + 0.2, 0.33], glow: 1.6 }); }
+    R.add('body', G.band(0.37, 0.06, 0.12, 8), moss, { p: [0, 1.15, 0] });
+    R.add('body', G.sph(0.45, 8, 6), '#ece4cc', { p: [0, 2.65, 0], s: [1, 1.05, 1.1] });
+    R.add('body', G.cbox(0.4, 0.2, 0.3, 0.05), '#ece4cc', { p: [0, 2.42, 0.22] });
+    R.sym('body', G.cbox(0.13, 0.11, 0.06, 0.02), glow, { p: [0.15, 2.7, 0.42], glow: 2.2 });
+    R.sym('body', G.horn(0.75, 0.08, 0.5, 5, 4), '#ece4cc', { p: [0.38, 2.85, -0.05], r: [-0.3, 0, -1.0] });
+    for (let i = 0; i < 4; i++) { const a = (i / 4) * PI * 2 + 0.4; R.add('body', G.cyl(0.01, 0.01, 0.5, 3), '#3a3028', { p: [Math.cos(a) * 0.48, 1.85, Math.sin(a) * 0.48] }); R.add('body', G.gem(0.08, 0.2, 4), vfx, { p: [Math.cos(a) * 0.48, 1.55, Math.sin(a) * 0.48], glow: 1.6 }); }
+    height = 3.4;
+  } else if (model === 'lumi_mark') { // floating star mark with orbit rings
     R.bone('spin', 'body', [0, 1.4, 0]);
-    R.add('spin', G.star(0.7, 0.28, 0.12), vfx, { glow: true });
-    R.add('spin', G.torus(0.95, 0.04, 3, 16), c.vfx2 || '#ffffff', { glow: true });
+    R.add('spin', G.star(0.75, 0.3, 0.16), vfx, { glow: 1.6 });
+    R.add('spin', G.star(0.42, 0.17, 0.2), c.vfx2 || '#ffffff', { glow: 2.2 });
+    R.add('spin', G.torus(1.0, 0.035, 3, 20), c.vfx2 || '#ffffff', { r: [PI / 2 - 0.3, 0, 0], glow: 1.8 });
+    R.add('spin', G.torus(0.85, 0.03, 3, 20), vfx, { r: [PI / 2 + 0.5, 0.4, 0], glow: 1.8 });
+    R.add('body', G.cyl(0.6, 0.6, 0.04, 16), vfx, { p: [0, 0.06, 0], glow: 0.8 });
     spin = 'spin'; height = 2.2;
   } else if (/lantern|ward/.test(model)) {
     R.add('body', G.cyl(0.08, 0.1, 2.2, 5), '#5a4030', { p: [0, 1.1, 0] });

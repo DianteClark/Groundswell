@@ -33,8 +33,9 @@ export class WeaponTrail {
     for (let i = 0; i < N; i++) {
       const s = S[Math.min(i, S.length - 1)]; const k = 1 - Math.min(1, s.age / this.life); const f = i < S.length ? k * k * (1 - i / N) : 0;
       pos.set([s.a.x, s.a.y, s.a.z], i * 6); pos.set([s.b.x, s.b.y, s.b.z], i * 6 + 3);
-      const r1 = (this.c1.r * 0.6 + 0.4) * f, g1 = (this.c1.g * 0.6 + 0.4) * f, b1 = (this.c1.b * 0.6 + 0.4) * f;
-      col.set([this.c0.r * f * 0.25, this.c0.g * f * 0.25, this.c0.b * f * 0.25], i * 6); col.set([r1 * 1.3 * this.c0.r + r1 * 0.3, g1 * 1.3 * this.c0.g + g1 * 0.3, b1 * 1.3 * this.c0.b + b1 * 0.3], i * 6 + 3);
+      const e = f * 1.8; // HDR so bloom picks up the smear; base edge fades to the skin colour
+      col.set([this.c0.r * f * 0.35, this.c0.g * f * 0.35, this.c0.b * f * 0.35], i * 6);
+      col.set([(this.c0.r * 0.75 + this.c1.r * 0.45) * e, (this.c0.g * 0.75 + this.c1.g * 0.45) * e, (this.c0.b * 0.75 + this.c1.b * 0.45) * e], i * 6 + 3);
     }
     this.mesh.geometry.attributes.position.needsUpdate = true; this.mesh.geometry.attributes.color.needsUpdate = true;
   }

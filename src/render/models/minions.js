@@ -8,6 +8,7 @@ import { teamColor } from '../util.js';
 
 const PI = Math.PI;
 const TYPES = ['minion_melee', 'minion_caster', 'minion_siege'];
+const MINION_TEAM = { 0: '#2f7dff', 1: '#ff2e2e' }; // deeper red: plain team red reads pink under ACES
 // part ids: 0 body, 1 legL/wheelsF, 2 legR/wheelsB, 3 weapon arm / cannon, 4 off arm / flag, 5 head
 const PIV = {
   minion_melee: [[0, 0, 0], [0.2, 0.62, 0], [-0.2, 0.62, 0], [-0.46, 1.32, 0], [0.46, 1.32, 0], [0, 1.5, 0]],
@@ -152,7 +153,7 @@ export class MinionInstancer {
     _m4.compose(_p.set(o.x, y, o.z), _q, _s.setScalar(sc));
     T.mesh.setMatrixAt(i, _m4);
     T.A.setXYZW(i, ph, mv, arm, die);
-    _c.set(teamColor(o.team)); T.C.setXYZ(i, _c.r * 1.1, _c.g * 1.1, _c.b * 1.1);
+    _c.set(MINION_TEAM[o.team] ?? teamColor(o.team)); T.C.setXYZ(i, _c.r, _c.g, _c.b);
     T.F.setX(i, Math.min(1, (o.flash || 0) * 0.8));
   }
   end() {

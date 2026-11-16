@@ -61,7 +61,7 @@ const FX = {
     const r = ev.radius || 7, d = dur(ev, 2); const e = warn(R, V, ev, ev.x, ev.y, r, d, c);
     for (let k = 0; k < 4; k++) R._later(k * d / 4, () => V.ring(ev.x, ev.y, { color: e ? '#ff6a4a' : c.vfx2, r0: r, r1: 0.5, dur: d / 4, easeIn: true, alpha: 0.6 }));
     for (let i = 0; i < 46 * I; i++) { const a = Math.random() * PI * 2, rr = r * (0.6 + Math.random() * 0.4); V.add.emit({ x: ev.x + Math.cos(a) * rr, y: 0.4 + Math.random(), z: ev.y + Math.sin(a) * rr, vx: -Math.cos(a) * 2, vz: -Math.sin(a) * 2, life: d * 0.8, size: 0.5, size1: 0.1, color: c.vfx, color1: c.vfx2, alpha: 0.9, drag: 0.2, swirl: [ev.x, ev.y, 1.2], shape: 1 }); }
-    V.pillar(ev.x, ev.y, { color: c.vfx, r: 1.4, h: 6, dur: d, alpha: 0.35 });
+    V.pillar(ev.x, ev.y, { color: c.vfx, r: 1.2, h: 5, dur: Math.min(d, 0.8), alpha: 0.25 });
   },
   bram_r_end: (R, V, ev, c, I) => {
     const r = ev.radius || 7;
