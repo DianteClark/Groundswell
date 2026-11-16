@@ -893,3 +893,20 @@ html.cl .loading{padding:6px calc(14px + var(--sar)) calc(6px + var(--sab)) calc
 .joy-base{position:fixed;left:var(--jx);top:var(--jy);width:var(--jb,130px);height:var(--jb,130px);margin:calc(var(--jb,130px) / -2) 0 0 calc(var(--jb,130px) / -2);border-radius:50%;border:2px solid rgba(255,255,255,.28);background:radial-gradient(circle,rgba(95,212,255,.1),rgba(0,0,0,.28))}
 .joy-knob{position:fixed;left:var(--jx);top:var(--jy);width:calc(var(--jb,130px) * .44);height:calc(var(--jb,130px) * .44);margin:calc(var(--jb,130px) * -.22) 0 0 calc(var(--jb,130px) * -.22);border-radius:50%;background:radial-gradient(circle at 40% 30%,#fff,#9fd8ff 40%,#3a7aff);box-shadow:0 0 14px rgba(95,212,255,.6);transform:translate(var(--kx),var(--ky))}
 .aim-cancel{position:fixed;left:var(--cx,70%);top:var(--cy,20px);width:72px;height:72px;border-radius:50%;display:none;flex-direction:column;align-items:center;justify-content:center;font-size:24px;background:rgba(80,10,20,.6);border:2px solid rgba(255,77,109,.6);pointer-events:none;z-index:22;margin-left:-36px}
+
+/* ===== 3.0 icon set ===== */
+.gs-ico { display:block; flex:none; }
+.gs-ico-txt { line-height:1; }
+.ab .ab-ic .gs-ico { width:100%; height:100%; }
+.ab .ab-ic { display:flex; align-items:center; justify-content:center; }
+.ab:not(.ab-atk):not(.sm):not(.xs) .ab-ic { padding:16%; }
+.ab.sm .ab-ic, .ab.ab-atk .ab-ic { padding:22%; }
+.ab .ab-ic .gs-ico path { vector-effect:non-scaling-stroke; }
+.navi .gs-ico { width:22px; height:22px; margin:0 auto; opacity:.9; }
+.navb.on .navi .gs-ico { filter:drop-shadow(0 0 6px rgba(120,190,255,.8)); opacity:1; }
+.hb .gs-ico { margin:auto; }
+.gold .gs-ico { display:inline-block; vertical-align:-3px; }
+.it .gs-ico, .qbuy .gs-ico, .qbb .gs-ico, .sp-b .gs-ico, .ri .gs-ico, .ls-i .gs-ico, .pr-ic .gs-ico, .ic-ic .gs-ico, .ib-ic .gs-ico, .ls-ic .gs-ico { margin:auto; }
+.ab-icw { position:relative; display:inline-flex; flex:none; margin-right:10px; }
+.ab-icw .ab-k { position:absolute; right:-6px; bottom:-6px; transform:scale(.8); }
+.buy-icon .gs-ico, .pop-glyph .gs-ico, .of-glyph .gs-ico { margin:0 auto; filter:drop-shadow(0 8px 24px rgba(0,0,0,.5)); }

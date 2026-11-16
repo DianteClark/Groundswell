@@ -1,19 +1,20 @@
 // Groundswell meta UI: menus, play setup, loading screen, results.
 import Save from '../meta/save.js';
+import { ico } from './icons.js';
 import { HEROES, HERO_BY_ID, RELIC_BY_ID, SIGIL_BY_ID, ITEM_BY_ID, skinsFor, skinById, defaultSkinId, roleIcon, recommendedLoadout } from '../meta/registry.js';
 import { TITLES, BANNERS, BORDERS, ICONS, flair } from '../meta/flair.js';
 import { refreshQuests, DIFFICULTIES, diffInfo, rankInfo, xpToNext, seasonTier, SEASON, seasonReward, msToMidnight, fmtCountdown, dayKey, grantMatchRewards, masteryProgress, MASTERY_NAMES, MASTERY_COLORS, seeded, checkFlairUnlocks, rerollQuest } from '../meta/economy.js';
 import { esc, frag, fmt, fmtTime, avatarHTML, bannerStyle, bannerClass, titleHTML, heroArtHTML, heroChipHTML, toast, modal, countUp, profileCardHTML, ESS, PRI, rarityColor, setPortraitRenderer } from './dom.js';
-import { sfx, setVolume } from './audio.js';
+import { sfx, setVolume, setMusicVolume } from './audio.js';
 import { MetaScreens } from './screens.js';
 import { installMobileGuards, isIOS, isStandalone } from './mobile.js';
 
 const NAV = [
-  { id: 'home', label: 'Home', icon: '⌂' },
-  { id: 'armory', label: 'Armory', icon: '⚒' },
-  { id: 'shop', label: 'Shop', icon: '◈' },
-  { id: 'profile', label: 'Profile', icon: '☺' },
-  { id: 'settings', label: 'Settings', icon: '⚙' },
+  { id: 'home', label: 'Home', icon: 'ui:home' },
+  { id: 'armory', label: 'Armory', icon: 'ui:anvil' },
+  { id: 'shop', label: 'Shop', icon: 'ui:gem' },
+  { id: 'profile', label: 'Profile', icon: 'ui:person' },
+  { id: 'settings', label: 'Settings', icon: 'ui:cog' },
 ];
 const BOT_NAMES = ['Kestrel', 'Vornir', 'Sable', 'Thistle', 'Grimbolt', 'Aurex', 'Moth', 'Quill', 'Rook', 'Ember', 'Nettle', 'Cinder', 'Halcyon', 'Juno', 'Brisk', 'Wisp', 'Talon', 'Orrin', 'Pike', 'Lark', 'Zephyr', 'Corvin', 'Mabel', 'Fenn'];
 
@@ -27,7 +28,7 @@ export class App {
     this.s = Save.load();
     refreshQuests(this.s);
     checkFlairUnlocks(this.s); Save.persist();
-    setVolume((this.s.settings.master ?? 0.7) * (this.s.settings.sfx ?? 0.8));
+    setVolume((this.s.settings.master ?? 0.7) * (this.s.settings.sfx ?? 0.8)); setMusicVolume((this.s.settings.master ?? 0.7) * (this.s.settings.music ?? 0.5));
     this.screen = 'home';
     this.ui = { play: { mode: 'bots', difficulty: Math.min(this.s.lastDifficulty || 1, 5), role: 'All', heroId: null }, armory: { heroId: null, tab: 'loadouts' }, shop: { tab: 'featured' }, profile: { tab: 'customize', kind: 'title' } };
     this.preview = null; this.previewHost = null; this.previewKey = '';
@@ -100,7 +101,7 @@ export class App {
     if (prevP != null && prevP !== s.prisms) top.querySelector('.pri-v').parentElement.classList.add('bump');
     this._lastE = s.essence; this._lastP = s.prisms;
     const nav = this.el.querySelector('.rb-nav');
-    nav.innerHTML = NAV.map(n => `<button class="navb ${this.screen === n.id || (n.id === 'home' && this.screen === 'play') ? 'on' : ''}" data-go="${n.id}"><span class="navi">${n.icon}</span><span>${n.label}</span></button>`).join('');
+    nav.innerHTML = NAV.map(n => `<button class="navb ${this.screen === n.id || (n.id === 'home' && this.screen === 'play') ? 'on' : ''}" data-go="${n.id}"><span class="navi">${ico(n.icon, 22)}</span><span>${n.label}</span></button>`).join('');
   }
   render() {
     this.s = Save.get();
@@ -276,7 +277,7 @@ export class App {
   jungleHint(h, lo) {
     if (!this.isJungler(h) || lo.relic === 'hunters_brand' || !RELIC_BY_ID.hunters_brand) return '';
     const r = RELIC_BY_ID.hunters_brand;
-    return `<div class="notice jg">${esc(r.icon || '🔥')} <span><b>Jungler:</b> take <b>${esc(r.name)}</b> to clear camps &amp; secure Wyrms.</span><button class="btn sm primary" data-act="takeBrand">Equip</button></div>`;
+    return `<div class="notice jg">${ico(r, 26) || esc(r.icon || '🔥')} <span><b>Jungler:</b> take <b>${esc(r.name)}</b> to clear camps &amp; secure Wyrms.</span><button class="btn sm primary" data-act="takeBrand">Equip</button></div>`;
   }
   act_takeBrand() {
     const id = this.ui.play.heroId; const L = Save.heroLoadouts(id);
@@ -285,9 +286,9 @@ export class App {
   }
   loadoutSummaryHTML(lo) {
     const r = RELIC_BY_ID[lo.relic]; const so = SIGIL_BY_ID[lo.sigils.offense]; const su = SIGIL_BY_ID[lo.sigils.utility];
-    return `<div class="losum">${lo.items.map(id => { const it = ITEM_BY_ID[id]; return `<span class="ls-i cat-${it?.category}" title="${esc(it?.name)}">${esc(it?.icon || '?')}</span>`; }).join('')}
-      <span class="ls-sep"></span><span class="ls-i relic" title="${esc(r?.name || '')}">${esc(r?.icon || '—')}</span>
-      <span class="ls-i sig" title="${esc(so?.name || '')}">${esc(so?.icon || '—')}</span><span class="ls-i sig" title="${esc(su?.name || '')}">${esc(su?.icon || '—')}</span></div>`;
+    return `<div class="losum">${lo.items.map(id => { const it = ITEM_BY_ID[id]; return `<span class="ls-i cat-${it?.category}" title="${esc(it?.name)}">${ico(it, 30) || esc(it?.icon || '?')}</span>`; }).join('')}
+      <span class="ls-sep"></span><span class="ls-i relic" title="${esc(r?.name || '')}">${ico(r, 30) || esc(r?.icon || '—')}</span>
+      <span class="ls-i sig" title="${esc(so?.name || '')}">${ico(so, 30) || esc(so?.icon || '—')}</span><span class="ls-i sig" title="${esc(su?.name || '')}">${ico(su, 30) || esc(su?.icon || '—')}</span></div>`;
   }
   act_mode(d) { if (d.m === 'p2p') { toast('👥 Play with Friend is coming soon — peer-to-peer matches are on the way!'); return; } this.ui.play.mode = d.m; this.render(); }
   act_diff(d) { const n = +d.d; if (!this.diffUnlocked(n)) { sfx('error'); toast(`🔒 Win a match on ${DIFFICULTIES[n - 2].name} to unlock ${DIFFICULTIES[n - 1].name}`); return; } this.ui.play.difficulty = n; this.s.lastDifficulty = n; Save.persist(); this.render(); }
@@ -401,7 +402,7 @@ export class App {
     const sum = res?.summary || {}; const won = sum.won;
     const players = cfg.players || [];
     const rows = (team) => (m?.heroes || []).map((h, i) => ({ h, p: players[i] || {} })).filter(x => (x.h.team ?? x.p.team) === team).map(({ h, p }) => {
-      const items = (h.items || []).map(it => { const d = it && ITEM_BY_ID[it.id]; const ic = it?.branch && d?.branches?.[it.branch] ? d.branches[it.branch].icon : d?.icon; return `<span class="ri">${esc(ic || '')}</span>`; }).join('');
+      const items = (h.items || []).map(it => { const d = it && ITEM_BY_ID[it.id]; const src = it?.branch && d?.branches?.[it.branch] ? d.branches[it.branch] : d; return `<span class="ri">${ico(src, 26) || esc(src?.icon || '')}</span>`; }).join('');
       return `<tr class="${p.isBot ? '' : 'me'}"><td class="rt-h">${heroChipHTML(h.heroId || p.heroId, 34, '', p.skinId || h.visual?.skinId)}<div><b>${esc(p.name || h.name || '')}</b><small>${esc(HERO_BY_ID[h.heroId || p.heroId]?.name || '')} · Lv ${h.level || 1}</small></div></td>
         <td class="kda">${h.kills | 0}/${h.deaths | 0}/${h.assists | 0}</td><td>${h.cs | 0}</td><td class="gold">${fmt(h.goldEarned ?? h.gold ?? 0)}</td><td class="its">${items}</td></tr>`;
     }).join('');

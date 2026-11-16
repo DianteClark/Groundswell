@@ -60,6 +60,7 @@ MAP.laneFor = (name, team) => {
 
 // ---------- nav grid ----------
 export const CELL = 1;
+const SOLID_PAD = 0.4, DYN_PAD = 0.15, EDGE_X = 3, EDGE_Y = 4;
 export const GW = Math.ceil(MAP_W / CELL), GH = Math.ceil(MAP_H / CELL);
 
 export class Nav {
@@ -79,6 +80,41 @@ export class Nav {
     const i = gy * GW + gx; return this.static[i] === 1 || this.dyn[i] > 0;
   }
   blocked(x, y) { return this.blockedCell(Math.floor(x / CELL), Math.floor(y / CELL)); }
+  // ---- smooth (geometric) collision for movement: circles + map edges, no grid staircase ----
+  _bucketsInit() {
+    const B = this._B = 8, bw = Math.ceil(MAP_W / B), bh = Math.ceil(MAP_H / B);
+    this._bw = bw; this._buckets = Array.from({ length: bw * bh }, () => []);
+    for (const o of obstacles) {
+      const R = o.r + SOLID_PAD + 1;
+      for (let by = Math.max(0, Math.floor((o.y - R) / B)); by <= Math.min(bh - 1, Math.floor((o.y + R) / B)); by++)
+        for (let bx = Math.max(0, Math.floor((o.x - R) / B)); bx <= Math.min(bw - 1, Math.floor((o.x + R) / B)); bx++) this._buckets[by * bw + bx].push(o);
+    }
+  }
+  _near(x, y) {
+    if (!this._buckets) this._bucketsInit();
+    const bx = Math.max(0, Math.min(this._bw - 1, Math.floor(x / this._B))), by = Math.max(0, Math.floor(y / this._B));
+    return this._buckets[by * this._bw + bx] || [];
+  }
+  /** Geometric solidity: inside an (inflated) obstacle circle, a dynamic obstacle, or outside the playable rect. */
+  solid(x, y) {
+    if (x < EDGE_X || y < EDGE_Y || x > MAP_W - EDGE_X || y > MAP_H - EDGE_Y) return true;
+    for (const o of this._near(x, y)) { const dx = x - o.x, dy = y - o.y, R = o.r + SOLID_PAD; if (dx * dx + dy * dy < R * R) return true; }
+    for (const o of this.dynObs) { const dx = x - o.x, dy = y - o.y, R = o.r + DYN_PAD; if (dx * dx + dy * dy < R * R) return true; }
+    return false;
+  }
+  /** Push (x,y) out of obstacles (radial = slides along curved walls). Returns {x,y,ok}. */
+  resolve(x, y) {
+    for (let it = 0; it < 4; it++) {
+      let moved = false;
+      if (x < EDGE_X + 1e-3) { x = EDGE_X + 1e-3; moved = true; } else if (x > MAP_W - EDGE_X - 1e-3) { x = MAP_W - EDGE_X - 1e-3; moved = true; }
+      if (y < EDGE_Y + 1e-3) { y = EDGE_Y + 1e-3; moved = true; } else if (y > MAP_H - EDGE_Y - 1e-3) { y = MAP_H - EDGE_Y - 1e-3; moved = true; }
+      const push = (o, R) => { const dx = x - o.x, dy = y - o.y, d2 = dx * dx + dy * dy; if (d2 >= R * R) return; const d = Math.sqrt(d2); if (d < 1e-6) { x = o.x + R + 1e-3; } else { x = o.x + dx / d * (R + 1e-3); y = o.y + dy / d * (R + 1e-3); } moved = true; };
+      for (const o of this._near(x, y)) push(o, o.r + SOLID_PAD);
+      for (const o of this.dynObs) push(o, o.r + DYN_PAD);
+      if (!moved) return { x, y, ok: true };
+    }
+    return { x, y, ok: !this.solid(x, y) };
+  }
   // dynamic circular obstacle (walls from abilities, map changes). returns handle
   addObstacle(x, y, r) {
     const cells = [];
@@ -130,9 +166,9 @@ export class Nav {
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
         if (!dx && !dy) continue;
         const nx = cx + dx, ny = cy + dy;
-        if (this.blockedCell(nx, ny)) continue;
-        if (dx && dy && (this.blockedCell(cx + dx, cy) || this.blockedCell(cx, cy + dy))) continue;
-        const ni = ny * GW + nx; if (closed[ni] === gen) continue;
+        const ni = ny * GW + nx;
+        if (ni !== goal && this.blockedCell(nx, ny)) continue;
+        if (dx && dy && (this.blockedCell(cx + dx, cy) || this.blockedCell(cx, cy + dy))) continue; if (closed[ni] === gen) continue;
         const ng = g[cur] + (dx && dy ? 1.4142 : 1);
         if (stamp[ni] !== gen || ng < g[ni]) { stamp[ni] = gen; g[ni] = ng; from[ni] = cur; heap.push(ni, ng + h(nx, ny)); }
       }

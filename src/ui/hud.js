@@ -1,10 +1,12 @@
 // Minimal in-match HUD. Reads match state; writes only via match.issue().
 import { HERO_BY_ID, ITEM_BY_ID, RELIC_BY_ID, itemDisplay, fmtStats } from '../meta/registry.js';
+import { ico } from './icons.js';
 import { MAP } from '../sim/map.js';
 import { XP_TABLE, ULT_LEVEL, ELEMENT_INFO, WYRM_FIRST, COLOSSUS_FIRST } from '../sim/constants.js';
 import Save from '../meta/save.js';
 import { esc, frag, fmt, fmtTime, heroChipHTML } from './dom.js';
-import { sfx, setVolume } from './audio.js';
+import { sfx, setVolume, setMusicVolume } from './audio.js';
+import { MatchAudio } from './matchaudio.js';
 import { installMobileGuards, setMatchMode } from './mobile.js';
 
 const EL_COLOR = { ember: '#ff6a2a', tide: '#3ab6ff', gale: '#8ff0c8', stone: '#d2aa6a' };
@@ -26,14 +28,15 @@ export class Hud {
     this.cache = {};
     this.feed = [];
     this.settings = Save.get().settings;
-    setVolume((this.settings.master ?? 0.7) * (this.settings.sfx ?? 0.8));
+    setVolume((this.settings.master ?? 0.7) * (this.settings.sfx ?? 0.8)); setMusicVolume((this.settings.master ?? 0.7) * (this.settings.music ?? 0.5));
+    try { this.audio = new MatchAudio(match, renderer, localPlayerId); } catch (e) { this.audio = null; }
     this.root = frag(`<div class="hud ${this.touch ? 'touch' : 'desk'}" style="--ts:${this.settings.touchSize || 1}">
       <div class="h-top">
         <div class="h-score"><span class="hs-k t0">0</span><div class="hs-mid"><span class="hs-time">0:00</span><div class="hs-obj"><span class="ob wyrm">🐉<b>—</b></span><span class="ob col">🗿<b>—</b></span></div></div><span class="hs-k t1">0</span></div>
         <div class="hs-souls"><span class="souls t0"></span><span class="souls t1"></span></div>
       </div>
       <div class="h-mm"><canvas width="240" height="160"></canvas></div>
-      <div class="h-tr"><button class="hb" data-h="score" title="Scoreboard (Tab)">📊</button><button class="hb" data-h="menu" title="Menu">☰</button></div>
+      <div class="h-tr"><button class="hb" data-h="score" title="Scoreboard (Tab)">${ico('ui:chart', 22)}</button><button class="hb" data-h="menu" title="Menu">${ico('ui:menu', 22)}</button></div>
       <div class="h-feed"></div>
       <div class="h-banner"></div>
       <div class="h-hint"></div><div class="h-qhint">Buy starting item ›</div>
@@ -43,12 +46,12 @@ export class Hud {
         <div class="h-unit">
           <div class="hu-port"><svg viewBox="0 0 40 40" class="xpring"><circle cx="20" cy="20" r="18" class="xr-bg"/><circle cx="20" cy="20" r="18" class="xr-fg"/></svg><span class="hu-face"></span><span class="hu-lvl">1</span></div>
           <div class="hu-bars"><div class="hu-top"><div class="hu-res"><span class="rs-n"></span><span class="rs-pips"></span></div><div class="hu-st"></div></div><div class="hpbar"><div class="hp-sh"></div><div class="hp-f"></div><span class="hp-t"></span></div>
-            <div class="hu-row"><span class="gold">🪙 <b>0</b></span><div class="items"></div><button class="qbuy" data-h="qbuy"><span class="qb-ic">+</span><span class="qb-c"></span></button><div class="qbr"></div></div></div>
+            <div class="hu-row"><span class="gold">${ico('ui:coin', 16)} <b>0</b></span><div class="items"></div><button class="qbuy" data-h="qbuy"><span class="qb-ic">+</span><span class="qb-c"></span></button><div class="qbr"></div></div></div>
         </div>
-        <div class="h-abs">${SLOTS.map(s => `<button class="ab ab-${s}" data-slot="${s}"><span class="ab-ic"></span><span class="ab-sw"></span><span class="ab-t"></span><span class="ab-k">${s === 'relic' ? (this.touch ? '' : 'D') : s.toUpperCase()}</span><span class="ab-lock">🔒</span></button>`).join('')}
-          <button class="ab ab-atk" data-h="attack"><span class="ab-ic">⚔️</span></button>
-          <button class="ab sm ab-rec" data-h="recall" title="Recall (B)"><span class="ab-ic">🏠</span></button>
-          <button class="ab sm ab-shop" data-h="shop" title="Shop (P)"><span class="ab-ic">🛒</span></button>
+        <div class="h-abs">${SLOTS.map(s => `<button class="ab ab-${s}" data-slot="${s}"><span class="ab-ic"></span><span class="ab-sw"></span><span class="ab-t"></span><span class="ab-k">${s === 'relic' ? (this.touch ? '' : 'D') : s.toUpperCase()}</span><span class="ab-lock">${ico('ui:lock', 22)}</span></button>`).join('')}
+          <button class="ab ab-atk" data-h="attack"><span class="ab-ic">${ico('ui:swords', 64)}</span></button>
+          <button class="ab sm ab-rec" data-h="recall" title="Recall (B)"><span class="ab-ic">${ico('ui:home', 64)}</span></button>
+          <button class="ab sm ab-shop" data-h="shop" title="Shop (P)"><span class="ab-ic">${ico('ui:cart', 64)}</span></button>
           <button class="ab xs ab-prio" data-h="prio" title="Attack priority"><span class="ab-ic">👤</span></button>
         </div>
       </div>
@@ -74,7 +77,7 @@ export class Hud {
     this.els.face.innerHTML = heroChipHTML(h?.heroId, 52);
     for (const s of SLOTS) {
       const d = this.abilityDef(s);
-      this.els.abilities[s].querySelector('.ab-ic').textContent = d ? (d.icon || TAG_GLYPH[(d.tags || [])[0]] || (d.name || s)[0]) : '·';
+      this.els.abilities[s].querySelector('.ab-ic').innerHTML = d ? (ico(d, 64, { frame: 'none' }) || esc(d.icon || TAG_GLYPH[(d.tags || [])[0]] || (d.name || s)[0])) : '·';
     }
     this.els.prio.classList.toggle('on', !!this.settings.champPriority);
     this._mmBase = this._drawMinimapBase();
@@ -174,6 +177,7 @@ export class Hud {
     const m = this.m; const h = this.hero; if (!h) return;
     const E = this.els; const c = this.cache;
     this._events();
+    try { this.audio?.update(); } catch (e) { /* audio must never break the HUD */ }
     // top bar
     const ts = m.teamStats || {};
     this._set('k0', ts[0]?.kills | 0, v => E.kills0.textContent = v);
@@ -221,7 +225,7 @@ export class Hud {
     this._set('items', isig, () => {
       E.items.innerHTML = [0, 1, 2].map(i => { const it = h.items?.[i]; const d = itemDisplay(it); const base = ITEM_BY_ID[h.loadout?.items?.[i]];
         const pas = it?.branch ? ITEM_BY_ID[it.id]?.branches?.[it.branch]?.passive : null;
-        return `<span class="it ${it ? 't' + d.tier : 'empty'}" title="${esc(d?.name || base?.name || '')}${pas ? ' — ' + esc(pas.name) + ': ' + esc(pas.desc) : ''}">${esc(d?.icon || base?.icon || '')}${it && !d.final ? `<i>${d.tier}</i>` : ''}</span>`; }).join('');
+        return `<span class="it ${it ? 't' + d.tier : 'empty'}" title="${esc(d?.name || base?.name || '')}${pas ? ' — ' + esc(pas.name) + ': ' + esc(pas.desc) : ''}">${ico(d?.src || base, 30) || esc(d?.icon || base?.icon || '')}${it && !d.final ? `<i>${d.tier}</i>` : ''}</span>`; }).join('');
     });
     // quick buy
     const shopOk = this.canShop();
@@ -233,10 +237,10 @@ export class Hud {
       const cost = nb.branch ? Math.min(nb.costA, nb.costB) : nb.cost;
       const afford = gold >= cost;
       E.qbuy.className = `qbuy ${afford ? 'afford' : ''} ${shopOk ? 'shop' : 'away'} ${nb.branch ? 'branch' : ''}`;
-      E.qbuy.querySelector('.qb-ic').textContent = def?.icon || '+';
+      E.qbuy.querySelector('.qb-ic').innerHTML = ico(def, 30) || esc(def?.icon || '+');
       E.qbuy.querySelector('.qb-c').textContent = nb.branch ? 'Pick' : fmt(cost);
       E.qbuy.title = nb.branch ? `${def?.name}: choose a branch` : `Buy ${def?.name} ${nb.step === 1 ? '' : 'T' + nb.step} (${cost}g)${shopOk ? '' : ' — at fountain'}`;
-      E.qbr.innerHTML = nb.branch ? ['a', 'b'].map(k => { const br = def?.branches?.[k]; const cst = k === 'a' ? nb.costA : nb.costB; return `<button class="qbb ${gold >= cst ? 'afford' : ''}" data-buy="${nb.slot}:${k}" title="${esc(br?.name || k)} — ${esc(br?.desc || fmtStats(br?.stats))}${br?.passive ? ' · ' + esc(br.passive.name) + ': ' + esc(br.passive.desc) : ''}"><span>${esc(br?.icon || k)}</span><small>${fmt(cst)}</small></button>`; }).join('') : '';
+      E.qbr.innerHTML = nb.branch ? ['a', 'b'].map(k => { const br = def?.branches?.[k]; const cst = k === 'a' ? nb.costA : nb.costB; return `<button class="qbb ${gold >= cst ? 'afford' : ''}" data-buy="${nb.slot}:${k}" title="${esc(br?.name || k)} — ${esc(br?.desc || fmtStats(br?.stats))}${br?.passive ? ' · ' + esc(br.passive.name) + ': ' + esc(br.passive.desc) : ''}"><span>${ico(br, 28) || esc(br?.icon || k)}</span><small>${fmt(cst)}</small></button>`; }).join('') : '';
     });
     const empty = !(h.items || []).some(Boolean);
     const startHint = !!(nb && !nb.branch && empty && shopOk && h.alive && gold >= nb.cost && !this.autoBuy);
@@ -311,7 +315,6 @@ export class Hud {
         const k = this.m.entities.get(ev.killerId) || this.m.heroes.find(x => x.id === ev.killerId); const v = this.m.heroes.find(x => x.id === ev.victimId);
         if (!v) break;
         this._feed(`${k?.kind === 'hero' ? heroChipHTML(k.heroId, 22) + `<span>${esc(k.name)}</span>` : `<span class="fx">${k ? esc(k.kind === 'tower' ? 'Tower' : k.kind === 'monster' ? 'Monster' : 'Minions') : 'Executed'}</span>`}<i class="kx">⚔</i>${heroChipHTML(v.heroId, 22)}<span>${esc(v.name)}</span>`, ev.team ?? (k?.team), (k?.id === me ? 'mine' : '') + (v.id === me ? ' died' : ''));
-        if (k?.id === me) sfx('kill'); else if (v.id === me) sfx('death');
         break;
       }
       case 'announce': {
@@ -320,9 +323,7 @@ export class Hud {
         else this._banner(ev.text, ev.team, ev.kind, ev.element);
         break;
       }
-      case 'levelup': if (ev.id === me) { sfx('levelup'); this.els.lvl.classList.remove('pop'); void this.els.lvl.offsetWidth; this.els.lvl.classList.add('pop'); if (ev.level === ULT_LEVEL) this.flashHint('Ultimate unlocked!'); } break;
-      case 'cast': if (ev.srcId === me) sfx('whoosh', 0.08); break;
-      case 'damage': if (ev.targetId === me && ev.amount > 20) sfx('hit', 0.18); break;
+      case 'levelup': if (ev.id === me) { this.els.lvl.classList.remove('pop'); void this.els.lvl.offsetWidth; this.els.lvl.classList.add('pop'); if (ev.level === ULT_LEVEL) this.flashHint('Ultimate unlocked!'); } break;
       case 'buy': if (ev.id === me) { this.cache.shopSig = ''; } break;
       case 'match_end': this._end(ev.winner); break;
     }
@@ -358,15 +359,15 @@ export class Hud {
       const cur = h.items?.[i]; const n = this.nextFor(i); const d = itemDisplay(cur); const base = ITEM_BY_ID[h.loadout?.items?.[i]];
       let act = '';
       if (!n) act = '<span class="sp-done">✔ Complete</span>';
-      else if (n.branch) act = ['a', 'b'].map(k => { const br = n.def?.branches?.[k]; const cst = k === 'a' ? n.costA : n.costB; return `<button class="sp-b ${gold >= cst ? 'afford' : ''}" data-buy="${i}:${k}"><span>${esc(br?.icon || '')}</span><b>${esc(br?.name || k)}</b><small>${esc(br?.desc || fmtStats(br?.stats))}${br?.passive ? `<br><span class="sp-pas">${esc(br.passive.name)}: ${esc(br.passive.desc)}</span>` : ''}</small><em>${fmt(cst)}g</em></button>`; }).join('');
-      else { const t = n.def?.tiers?.[n.step - 1]; act = `<button class="sp-b ${gold >= n.cost ? 'afford' : ''}" data-buy="${i}"><span>${esc(n.def?.icon || '')}</span><b>${esc(n.def?.name || '')} · T${n.step}</b><small>${esc(t?.desc || fmtStats(t?.stats))}</small><em>${fmt(n.cost)}g</em></button>`; }
-      return `<div class="sp-row"><span class="it ${cur ? 't' + d.tier : 'empty'}">${esc(d?.icon || base?.icon || '')}</span><div class="sp-acts">${act}</div></div>`;
+      else if (n.branch) act = ['a', 'b'].map(k => { const br = n.def?.branches?.[k]; const cst = k === 'a' ? n.costA : n.costB; return `<button class="sp-b ${gold >= cst ? 'afford' : ''}" data-buy="${i}:${k}"><span>${ico(br, 34) || esc(br?.icon || '')}</span><b>${esc(br?.name || k)}</b><small>${esc(br?.desc || fmtStats(br?.stats))}${br?.passive ? `<br><span class="sp-pas">${esc(br.passive.name)}: ${esc(br.passive.desc)}</span>` : ''}</small><em>${fmt(cst)}g</em></button>`; }).join('');
+      else { const t = n.def?.tiers?.[n.step - 1]; act = `<button class="sp-b ${gold >= n.cost ? 'afford' : ''}" data-buy="${i}"><span>${ico(n.def, 34) || esc(n.def?.icon || '')}</span><b>${esc(n.def?.name || '')} · T${n.step}</b><small>${esc(t?.desc || fmtStats(t?.stats))}</small><em>${fmt(n.cost)}g</em></button>`; }
+      return `<div class="sp-row"><span class="it ${cur ? 't' + d.tier : 'empty'}">${ico(d?.src || base, 34) || esc(d?.icon || base?.icon || '')}</span><div class="sp-acts">${act}</div></div>`;
     }).join('');
     this.els.shop.innerHTML = `<div class="sp-box"><div class="sp-h"><b>Shop</b><button class="sp-auto ${this.autoBuy ? 'on' : ''}" data-h="autobuy">Auto-buy ${this.autoBuy ? 'ON' : 'OFF'}</button><span class="gold">🪙 ${fmt(gold)}</span><button class="hb" data-h="shop">✕</button></div>${shopOk ? '' : '<div class="sp-warn">Return to your fountain (or wait until respawn) to buy.</div>'}${rows}</div>`;
   }
   _renderBoard() {
     const m = this.m;
-    const team = (t) => m.heroes.filter(h => h.team === t).map(h => `<tr class="${h.id === this.hero.id ? 'me' : ''} ${h.alive ? '' : 'dead'}"><td>${heroChipHTML(h.heroId, 26)}<span>${esc(h.name)}</span><small>${h.level}</small></td><td>${h.kills}/${h.deaths}/${h.assists}</td><td>${h.cs}</td><td class="its">${(h.items || []).map(it => `<span>${esc(itemDisplay(it)?.icon || '·')}</span>`).join('')}</td></tr>`).join('');
+    const team = (t) => m.heroes.filter(h => h.team === t).map(h => `<tr class="${h.id === this.hero.id ? 'me' : ''} ${h.alive ? '' : 'dead'}"><td>${heroChipHTML(h.heroId, 26)}<span>${esc(h.name)}</span><small>${h.level}</small></td><td>${h.kills}/${h.deaths}/${h.assists}</td><td>${h.cs}</td><td class="its">${(h.items || []).map(it => `<span>${ico(itemDisplay(it)?.src, 22) || esc(itemDisplay(it)?.icon || '·')}</span>`).join('')}</td></tr>`).join('');
     const ts = m.teamStats || {};
     this.els.board.innerHTML = `<div class="sb-box"><table><thead><tr><th class="t0">Blue · ${ts[0]?.kills | 0}</th><th>KDA</th><th>CS</th><th>Items</th></tr></thead><tbody>${team(0)}</tbody><thead><tr><th class="t1">Red · ${ts[1]?.kills | 0}</th><th></th><th></th><th></th></tr></thead><tbody>${team(1)}</tbody></table></div>`;
   }
@@ -491,6 +492,7 @@ export class Hud {
   }
 
   dispose() {
+    try { this.audio?.dispose(); } catch (e) { }
     setMatchMode(false);
     if (this.touch) { window.removeEventListener('resize', this._layoutTouch); window.visualViewport?.removeEventListener('resize', this._layoutTouch); }
     window.removeEventListener('keydown', this._onKey); window.removeEventListener('keyup', this._onKey);

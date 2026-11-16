@@ -1,9 +1,11 @@
-// Core match simulation. Deterministic fixed-tick (30Hz). Owner: Lead.
+// Core match simulation. Deterministic fixed-tick (60Hz, see constants.TICK_RATE).
 import * as C from './constants.js';
-import { DT } from './constants.js';
+import { DT, TICK_RATE, ticks } from './constants.js';
 import { makeRng } from './rng.js';
 import { MAP, Nav, inBrush } from './map.js';
 import { dealDamage, heal, addShield, addStatus, hasStatus, canMove, canAttack, canCast, isTargetable, isUnit, spawnProjectile, spawnArea, updateProjectile, updateArea, interruptRecall } from './combat.js';
+const VISION_EVERY = ticks(0.1), ECON_EVERY = TICK_RATE;
+const BUFFER_WINDOW = 0.25;           // casts pressed this close to becoming possible are buffered
 import { createApi } from './blocks.js';
 import { HERO_BY_ID } from '../data/heroes/index.js';
 import { ITEM_BY_ID } from '../data/items.js';
@@ -40,6 +42,7 @@ export class Match {
     };
     this.mapChanges = [];
     this.waveCount = 0; this.nextWave = C.WAVE_FIRST;
+    this.finalSwell = false; this.finalSwellWarned = false; this.swellBonus = null;
     this._buildStructures();
     this._buildCamps();
     for (const p of config.players || []) this._addHero(p);
@@ -223,6 +226,7 @@ export class Match {
   }
   _recomputeUnitStats(e) {
     const s = { ...e.baseStats };
+    if (this.finalSwell && (e.kind === 'tower' || e.kind === 'core')) s.armor *= 0.6;
     if (e.kind === 'minion' && this.teamStats[e.team]?.mightUntil > this.time) { s.power *= 1.5; s.armor += 30; s.moveSpeed *= 1.1; }
     this._applyMods(e, s);
     e.stats = s;
@@ -232,7 +236,10 @@ export class Match {
   tick() {
     if (this.over) return;
     this.events = [];
-    this.time += DT; this.tickCount++;
+    this.tickCount++; this.time = this.tickCount / TICK_RATE;
+    // interpolation snapshot for EVERYTHING that moves (heroes, minions, projectiles, areas, summons)
+    for (const e of this.entities.values()) { e.prevX = e.x; e.prevY = e.y; e.prevFacing = e.facing; }
+    if (this._localHeroId === undefined) this._localHeroId = this.localPlayerId != null ? (this.heroOf(this.localPlayerId)?.id ?? null) : null;
     // timers
     if (this.timers.length) {
       const due = this.timers.filter(t => t.at <= this.time).sort((a, b) => a.at - b.at || a.seq - b.seq);
@@ -250,7 +257,6 @@ export class Match {
       if (e.removed) continue;
       if (e.kind === 'projectile') { updateProjectile(this, e); continue; }
       if (e.kind === 'area') { updateArea(this, e); continue; }
-      e.prevX = e.x; e.prevY = e.y;
       this._updateCommon(e);
       if (e.removed) continue;
       if (!e.alive) { if (e.kind === 'hero') this._heroDead(e); else if (e.removeAt && this.time >= e.removeAt) this.remove(e); continue; }
@@ -265,10 +271,15 @@ export class Match {
     }
     // projectiles spawned this tick have prevX = x
     this._separate();
-    if (this.tickCount % 3 === 0) this._vision();
+    if (this.tickCount % VISION_EVERY === 0) this._vision();
     this._economy();
-    this.eventLog.push(...this.events.map(ev => ({ tick: this.tickCount, ev })));
-    if (this.eventLog.length > 600) this.eventLog.splice(0, this.eventLog.length - 400);
+    for (const ev of this.events) this.eventLog.push({ tick: this.tickCount, ev });
+    // keep ~1s of history (render/HUD read every frame; a frame can run several ticks)
+    if (this.eventLog.length > 1500 || (this.eventLog.length && this.eventLog[0].tick < this.tickCount - TICK_RATE * 2)) {
+      const minTick = this.tickCount - TICK_RATE; let i = 0; while (i < this.eventLog.length && this.eventLog[i].tick < minTick) i++;
+      if (this.eventLog.length - i > 1500) i = this.eventLog.length - 1500;
+      if (i) this.eventLog.splice(0, i);
+    }
   }
 
   _updateCommon(e) {
@@ -299,20 +310,76 @@ export class Match {
     }
     if (!h.alive) return;
     switch (cmd.type) {
-      case 'move': interruptRecall(this, h); h.order = { type: 'move', x: cmd.x, y: cmd.y }; h.path = null; h.windup = null; break;
-      case 'moveDir': {
-        const l = Math.hypot(cmd.dx, cmd.dy);
-        if (l < 0.05) { if (h.order?.type === 'moveDir') h.order = null; }
-        else { interruptRecall(this, h); h.order = { type: 'moveDir', dx: cmd.dx / l, dy: cmd.dy / l }; h.windup = null; h.path = null; }
+      case 'move': {
+        interruptRecall(this, h); this._cancelWindup(h);
+        const same = h.order?.type === 'move' && h.path && Math.hypot(h.order.x - cmd.x, h.order.y - cmd.y) < 0.6;
+        h.order = { type: 'move', x: cmd.x, y: cmd.y }; if (!same) h.path = null;  // tiny re-clicks keep the current path (no re-path stutter)
         break;
       }
-      case 'attack': { const t = this.entities.get(cmd.targetId); if (t && t.team !== h.team && t.alive) { interruptRecall(this, h); h.order = { type: 'attack', id: t.id }; h.path = null; } break; }
+      case 'moveDir': {
+        // Joystick. h.joy persists until released; a one-shot attack ('once', mobile attack button) keeps priority
+        // and movement resumes along h.joy the instant the attack lands (= auto backswing cancel / orb-walk).
+        const l = Math.hypot(cmd.dx, cmd.dy);
+        if (l < 0.05) { h.joy = null; if (h.order?.type === 'moveDir') { h.order = null; h.path = null; } }
+        else {
+          h.joy = { dx: cmd.dx / l, dy: cmd.dy / l };
+          if (h.order?.type === 'attack' && h.order.once) break;
+          interruptRecall(this, h); this._cancelWindup(h);
+          h.order = { type: 'moveDir' }; h.path = null;
+        }
+        break;
+      }
+      case 'attack': {
+        const t = this.entities.get(cmd.targetId);
+        if (t && t.team !== h.team && t.alive) {
+          interruptRecall(this, h);
+          const o = h.order;
+          if (o?.type === 'attack' && o.id === t.id) { if (!cmd.once) o.once = false; break; }   // re-issue on same target: never resets the swing
+          if (h.windup && h.windup.targetId !== t.id) this._cancelWindup(h);
+          h.order = { type: 'attack', id: t.id, once: !!cmd.once }; h.path = null;
+        }
+        break;
+      }
       case 'attackMove': interruptRecall(this, h); h.order = { type: 'attackMove', x: cmd.x, y: cmd.y }; h.path = null; break;
-      case 'stop': h.order = null; h.path = null; h.windup = null; break;
-      case 'cast': this._tryCast(h, cmd.slot, cmd.x, cmd.y, cmd.targetId); break;
-      case 'recall': if (!h.recalling && canMove(h)) { h.order = null; h.path = null; h.windup = null; h.recalling = { until: this.time + (this.teamStats[h.team].mightUntil > this.time ? C.MIGHT_RECALL_TIME : C.RECALL_TIME), start: this.time }; this.emit({ t: 'recall', id: h.id }); } break;
+      case 'stop': h.order = null; h.path = null; h.joy = null; this._cancelWindup(h); h.castBuffer = null; break;
+      case 'cast': {
+        const r = this._tryCast(h, cmd.slot, cmd.x, cmd.y, cmd.targetId);
+        if (r === true || r === 'moving') { h.castBuffer = null; break; }
+        const wait = this._castWait(h, cmd.slot);
+        if (wait != null && wait <= BUFFER_WINDOW) h.castBuffer = { slot: cmd.slot, x: cmd.x, y: cmd.y, targetId: cmd.targetId, until: this.time + wait + 0.06 };
+        break;
+      }
+      case 'recall': if (!h.recalling && canMove(h)) { h.order = null; h.path = null; this._cancelWindup(h); h.recalling = { until: this.time + (this.teamStats[h.team].mightUntil > this.time ? C.MIGHT_RECALL_TIME : C.RECALL_TIME), start: this.time }; this.emit({ t: 'recall', id: h.id }); } break;
     }
   }
+  /** Seconds until `slot` could be cast (null = not soon / impossible). Used for input buffering. */
+  _castWait(h, slot) {
+    const def = this.abilityDef(h, slot), st = h.abilities[slot];
+    if (!def || !st || !def.cast || !h.alive) return null;
+    if (slot === 'r' && h.level < C.ULT_LEVEL) return null;
+    let w = Math.max(0, st.readyAt - this.time);
+    if (h.dash) { const d = h.dash; w = Math.max(w, Math.hypot(d.tx - h.x, d.ty - h.y) / d.speed); }
+    if (h.castLockUntil > this.time) w = Math.max(w, h.castLockUntil - this.time);
+    if (h.channel?.locksAll) w = Math.max(w, h.channel.until - this.time);
+    for (const s of h.statuses) if (s.key === 'stun' || s.key === 'knockup' || (s.key === 'silence' && slot !== 'relic')) w = Math.max(w, s.until - this.time);
+    return w;
+  }
+  _tryBuffer(h) {
+    const b = h.castBuffer; if (!b) return;
+    if (this.time > b.until || !h.alive) { h.castBuffer = null; return; }
+    if (h.dash || h.castLockUntil > this.time || (h.channel?.locksAll)) return;
+    const r = this._tryCast(h, b.slot, b.x, b.y, b.targetId);
+    if (r) h.castBuffer = null;
+  }
+  /** Cancel an attack that is still winding up: the swing is refunded (you can attack again immediately). */
+  _cancelWindup(e) {
+    const w = e.windup; if (!w) return;
+    e.windup = null; e.nextAttackAt = Math.min(e.nextAttackAt, w.start);
+    if (e.anim?.state === 'attack') e.anim = { state: 'idle', t: 0 };
+    this.emit({ t: 'attack_cancel', srcId: e.id });
+  }
+  /** Attack-timer reset (LoL "AA reset"): the next auto may start right away. */
+  resetAttack(e) { if (!e.windup) e.nextAttackAt = Math.min(e.nextAttackAt, this.time); }
 
   canShop(h) { const f = MAP.fountains[h.team]; return !h.alive || dist(h, f) <= C.FOUNTAIN_RADIUS + 2; }
   nextPurchase(h, slot) {
@@ -355,7 +422,7 @@ export class Match {
       if (!target || !ok(target)) target = this.findUnitAt(x, y, 3, ok);
       if (!target && tf !== 'enemy' && (def.selfCast !== false)) target = h;
       if (!target) return false;
-      if (dist(h, target) - target.radius > range) { interruptRecall(this, h); h.order = { type: 'cast', slot, id: target.id }; h.path = null; return true; }
+      if (dist(h, target) - target.radius > range) { interruptRecall(this, h); this._cancelWindup(h); h.order = { type: 'cast', slot, id: target.id, prev: h.order?.type === 'cast' ? h.order.prev : h.order }; h.path = null; return 'moving'; }
       x = target.x; y = target.y;
     }
     let dx = x - h.x, dy = y - h.y, d = Math.hypot(dx, dy);
@@ -365,16 +432,19 @@ export class Match {
     const aim = { x: h.x + dirX * cd, y: h.y + dirY * cd, rawX: x, rawY: y, dirX, dirY, dist: cd, target, targetId: target?.id ?? null, range };
     if (def.targeting === 'self') { aim.x = h.x; aim.y = h.y; }
     interruptRecall(this, h);
-    h.windup = null;
+    const prevFacing = h.facing;
+    h.facing = Math.atan2(dirY, dirX);            // face the aim instantly (dashes read h.facing too)
+    const wind = h.windup; h.windup = null;
     const res = def.cast(this.api, h, aim);
-    if (res === false) return false;
-    h.facing = Math.atan2(dirY, dirX);
+    if (res === false) { h.windup = wind; h.facing = prevFacing; return false; }
+    if (wind) { h.nextAttackAt = Math.min(h.nextAttackAt, wind.start); this.emit({ t: 'attack_cancel', srcId: h.id }); }
+    if (!h.dash) h.facing = Math.atan2(dirY, dirX);
     let cdv = typeof def.cd === 'function' ? def.cd(h) : def.cd;
     if (slot !== 'relic') cdv *= (1 - (h.stats.haste || 0) / 100);
     if (typeof res === 'object' && res?.cd != null) cdv = res.cd;
     st.cdMax = cdv; st.readyAt = this.time + cdv; st.ready = cdv <= 0; st.cd = cdv;
     h.anim = { state: 'cast', t: 0, slot };
-    if (h.order?.type === 'cast') h.order = null;
+    if (h.order?.type === 'cast') h.order = h.order.prev && h.order.prev.type !== 'move' ? h.order.prev : null;
     this.emit({ t: 'cast', srcId: h.id, heroId: h.heroId, slot, x: h.x, y: h.y, tx: aim.x, ty: aim.y });
     this.callHooks(h, 'onCast', slot, aim);
     return true;
@@ -403,7 +473,8 @@ export class Match {
     const ef = MAP.fountains[1 - h.team];
     if (dist(h, ef) <= 18) dealDamage(this, null, h, 600 * DT, { type: 'true', noHooks: true });
     if (!h.alive) return;
-    if (h.dash) { this._dashStep(h); return; }
+    if (h.castBuffer) this._tryBuffer(h);
+    if (h.dash) { this._dashStep(h); if (!h.dash && h.castBuffer) this._tryBuffer(h); return; }
     if (h.channel) {
       if (this.time >= h.channel.until) { const c = h.channel; h.channel = null; c.onEnd?.(this.api, h); }
       else { c_tick(this, h); if (h.channel?.locksAll) return; }
@@ -415,17 +486,24 @@ export class Match {
     if (h.windup) { this._resolveWindup(h); }
     const taunt = hasStatus(h, 'taunt');
     if (taunt) { const t = this.entities.get(taunt.sourceId); if (t?.alive) { this._attackTarget(h, t); return; } }
+    if (hasStatus(h, 'fear')) return;
+    if (!h.order && h.joy && canMove(h)) h.order = { type: 'moveDir' };   // joystick still held: resume
     const o = h.order;
     if (!o) { // idle: auto-acquire within attack range
-      if (!h.windup && h.anim.state !== 'cast' || h.anim.t > 0.3) this._setAnim(h, 'idle');
+      this._idleAnim(h);
+      if (h.windup) return;
       const t = this._acquire(h, h.stats.attackRange + 0.5, true);
       if (t) this._attackTarget(h, t, true);
       return;
     }
     switch (o.type) {
-      case 'move': if (this._followTo(h, o.x, o.y, 0.3)) { h.order = null; this._setAnim(h, 'idle'); } break;
-      case 'moveDir': this._moveDir(h, o.dx, o.dy); break;
-      case 'attack': { const t = this.entities.get(o.id); if (!t || !t.alive || !t.vis[h.team] || !isTargetable(t)) { h.order = null; break; } this._attackTarget(h, t); break; }
+      case 'move': if (this._followTo(h, o.x, o.y, 0.15)) { h.order = null; this._idleAnim(h); } break;
+      case 'moveDir': if (!h.joy) { h.order = null; this._idleAnim(h); break; } this._moveDir(h, h.joy.dx, h.joy.dy); break;
+      case 'attack': {
+        const t = this.entities.get(o.id);
+        if (!t || !t.alive || !t.vis[h.team] || !isTargetable(t)) { h.order = h.joy ? { type: 'moveDir' } : null; if (h.windup && h.windup.targetId === o.id) this._cancelWindup(h); break; }
+        this._attackTarget(h, t); break;
+      }
       case 'attackMove': {
         const t = this._acquire(h, h.stats.attackRange + 5, false);
         if (t) this._attackTarget(h, t); else if (this._followTo(h, o.x, o.y, 0.5)) h.order = null;
@@ -433,15 +511,28 @@ export class Match {
       }
       case 'cast': {
         const t = this.entities.get(o.id);
-        if (!t || !t.alive) { h.order = null; break; }
+        if (!t || !t.alive || !t.vis[h.team]) { h.order = h.joy ? { type: 'moveDir' } : null; break; }
         const def = this.abilityDef(h, o.slot); const range = typeof def.range === 'function' ? def.range(h) : def.range;
-        if (dist(h, t) - t.radius <= range) { h.order = null; this._tryCast(h, o.slot, t.x, t.y, t.id); }
+        if (dist(h, t) - t.radius <= range) {
+          const prev = o.prev; h.order = null;
+          const ok = this._tryCast(h, o.slot, t.x, t.y, t.id);
+          if (ok === true) h.order = h.joy ? { type: 'moveDir' } : (prev?.type === 'attack' ? { ...prev, once: false } : null);
+          else if (ok !== 'moving') h.order = null;
+        }
         else this._followTo(h, t.x, t.y, 0, true);
         break;
       }
     }
   }
   _setAnim(e, state) { if (e.anim.state !== state) e.anim = { state, t: 0 }; }
+  /** Go idle unless an attack swing / cast pose is still playing (backswing is visible, not cut). */
+  _idleAnim(e) {
+    const a = e.anim; if (a.state === 'idle') return;
+    if (e.windup) return;
+    if (a.state === 'attack' && a.t < (a.dur || 0.5) * 0.85) return;
+    if (a.state === 'cast' && a.t < 0.35) return;
+    e.anim = { state: 'idle', t: 0 };
+  }
 
   _acquire(e, range, idle) {
     // prefer: enemy heroes when attack-moving? LoL picks nearest. Idle heroes don't auto-target champions under enemy tower...
@@ -462,21 +553,32 @@ export class Match {
     if (d <= range) {
       e.path = null;
       e.facing = Math.atan2(t.y - e.y, t.x - e.x);
-      if (!e.windup && this.time >= e.nextAttackAt && canAttack(e)) {
-        const as = e.stats.attackSpeed;
-        const wind = Math.max(0.08, Math.min(0.4, 0.3 / as));
-        e.windup = { targetId: t.id, at: this.time + wind };
-        e.nextAttackAt = this.time + 1 / as;
-        e.anim = { state: 'attack', t: 0, dur: 1 / as };
-        this.emit({ t: 'attack', srcId: e.id, targetId: t.id });
-      } else if (!e.windup && e.anim.state === 'run') this._setAnim(e, 'idle');
+      if (!e.windup && this.time >= e.nextAttackAt - 1e-6 && canAttack(e)) this._startAttack(e, t);
+      else if (!e.windup && e.anim.state === 'run') this._setAnim(e, 'idle');
     } else if (!idle && canMove(e)) {
-      if (e.windup) return;
-      this._followTo(e, t.x, t.y, range * 0.8, true);
+      if (e.windup) return;   // keep swinging; the hit still lands if the target is within leeway
+      this._followTo(e, t.x, t.y, Math.max(0.5, range - 0.35), true);
     }
   }
+  /** Attack timing (LoL-style): windup (attack point) → hit → backswing until the period ends. */
+  attackTiming(e) {
+    const period = 1 / Math.max(0.05, e.stats.attackSpeed);
+    let frac, lo = 0.1, hi = 0.4;
+    if (e.kind === 'hero') { frac = e.def.windup ?? (e.def.ranged ? 0.2 : 0.24); hi = 0.32; }
+    else if (e.kind === 'tower') { frac = 0; lo = hi = 0.15; }
+    else if (e.kind === 'minion') frac = 0.28;
+    else frac = 0.3;
+    return { period, windup: Math.max(lo, Math.min(hi, period * frac)) };
+  }
+  _startAttack(e, t) {
+    const { period, windup } = this.attackTiming(e);
+    e.windup = { targetId: t.id, at: this.time + windup, start: this.time };
+    e.nextAttackAt = this.time + period;
+    e.anim = { state: 'attack', t: 0, dur: period, windup };
+    this.emit({ t: 'attack', srcId: e.id, targetId: t.id, windup, period });
+  }
   _resolveWindup(e) {
-    const w = e.windup; if (this.time < w.at) return;
+    const w = e.windup; if (this.time < w.at - 1e-6) return;
     e.windup = null;
     const t = this.entities.get(w.targetId);
     if (!t || !t.alive || !canAttack(e)) return;
@@ -484,11 +586,18 @@ export class Match {
     const ranged = e.kind === 'hero' ? e.def.ranged : (e.kind === 'tower' || e.projectileKey);
     if (ranged) {
       const key = e.kind === 'hero' ? (e.def.projectile || `auto_${e.heroId}`) : e.kind === 'tower' ? 'tower_shot' : e.projectileKey;
-      spawnProjectile(this, { src: e, targetId: t.id, speed: e.kind === 'tower' ? 42 : 38, visual: key, onHit: (m, tgt) => this._autoHit(e, tgt) });
-    } else this._autoHit(e, t);
+      const speed = e.kind === 'hero' ? (e.def.missileSpeed || 55) : e.kind === 'tower' ? 50 : (e.minionType === 'siege' ? 34 : 40);
+      const p = spawnProjectile(this, { src: e, targetId: t.id, speed, visual: key, onHit: (m, tgt) => this._autoHit(e, tgt, true) });
+      p.isAuto = true;
+      if (e.kind === 'hero') this.emit({ t: 'attack_fire', srcId: e.id, targetId: t.id, projId: p.id });
+    } else this._autoHit(e, t, false);
+    // one-shot attack (mobile tap / joystick held): movement resumes right at the attack point
+    const o = e.order;
+    if (e.kind === 'hero' && o?.type === 'attack' && o.id === w.targetId && o.once) e.order = e.joy ? { type: 'moveDir' } : { type: 'attack', id: o.id, once: false };
   }
-  _autoHit(e, t) {
+  _autoHit(e, t, ranged) {
     if (!t.alive) return;
+    if (e.kind === 'hero') this.emit({ t: 'attack_hit', srcId: e.id, targetId: t.id, ranged: !!ranged });
     if (hasStatus(e, 'blind')) { this.emit({ t: 'miss', srcId: e.id, targetId: t.id }); return; }
     let amt;
     if (e.kind === 'tower') {
@@ -500,10 +609,10 @@ export class Match {
     }
     amt = e.stats.power * (e.def?.attackRatio ?? 1);
     if (e.kind === 'minion' && t.kind === 'hero') amt *= 0.6;
-    const info = { amount: amt, onHit: true };
+    const info = { amount: amt, onHit: true, empowered: false };
     if (e.kind === 'hero') { this.callHooks(e, 'modifyAutoAttack', t, info); if (t.kind === 'hero') e.aggroAt = this.time; }
     if (e.kind === 'summon' && t.kind === 'hero') { const ow = this.entities.get(e.ownerId); if (ow) ow.aggroAt = this.time; }
-    const dealt = dealDamage(this, e, t, info.amount, { type: 'auto' });
+    const dealt = dealDamage(this, e, t, info.amount, { type: 'auto', empowered: info.empowered || undefined });
     if (e.kind === 'hero') { this.callHooks(e, 'onAttackHit', t, { amount: dealt }); }
   }
 
@@ -516,91 +625,126 @@ export class Match {
     e.x += dx / l * step; e.y += dy / l * step; if (!d.forced) e.facing = Math.atan2(dy, dx);
     d.onStep?.(this.api, e, d);
   }
+  /** Move by (dx,dy) with smooth sliding along obstacles. Returns the distance actually moved. */
+  _slide(e, dx, dy) {
+    const p = this.nav.resolve(e.x + dx, e.y + dy);
+    if (!p.ok) return 0;
+    const m = Math.hypot(p.x - e.x, p.y - e.y);
+    e.x = p.x; e.y = p.y; return m;
+  }
   _stepToward(e, tx, ty, speed) {
     const dx = tx - e.x, dy = ty - e.y, l = Math.hypot(dx, dy);
     if (l < 1e-4) return true;
     const step = Math.min(l, speed * DT);
-    let nx = e.x + dx / l * step, ny = e.y + dy / l * step;
-    if (this.nav.blocked(nx, ny)) {
-      if (!this.nav.blocked(nx, e.y)) ny = e.y; else if (!this.nav.blocked(e.x, ny)) nx = e.x; else return false;
-    }
-    e.x = nx; e.y = ny; e.facing = Math.atan2(dy, dx);
-    this._setAnim(e, 'run');
+    const moved = this._slide(e, dx / l * step, dy / l * step);
+    e.facing = Math.atan2(dy, dx);
+    if (moved > 1e-4) this._setAnim(e, 'run');
+    if (moved < step * 0.2) { e.stuckFor = (e.stuckFor || 0) + DT; } else e.stuckFor = 0;
     return l <= speed * DT;
   }
   _moveDir(e, dx, dy) {
-    if (!canMove(e) || e.windup) { if (!canMove(e)) return; }
-    e.windup = null;
-    const sp = e.stats.moveSpeed;
-    let nx = e.x + dx * sp * DT, ny = e.y + dy * sp * DT;
-    if (this.nav.blocked(nx, ny)) {
-      // slide along obstacle
-      if (!this.nav.blocked(nx, e.y)) ny = e.y; else if (!this.nav.blocked(e.x, ny)) nx = e.x;
-      else { // try rotating
-        for (const a of [0.6, -0.6, 1.2, -1.2]) { const c = Math.cos(a), s = Math.sin(a); const rx = dx * c - dy * s, ry = dx * s + dy * c; const tx = e.x + rx * sp * DT, ty = e.y + ry * sp * DT; if (!this.nav.blocked(tx, ty)) { nx = tx; ny = ty; break; } }
-        if (this.nav.blocked(nx, ny)) return;
-      }
+    if (!canMove(e)) return;
+    if (e.windup) this._cancelWindup(e);
+    const step = e.stats.moveSpeed * DT;
+    let moved = this._slide(e, dx * step, dy * step);
+    if (moved < step * 0.15) { // wedged in a crevice: try angled directions
+      for (const a of [0.5, -0.5, 1.0, -1.0]) { const c = Math.cos(a), s = Math.sin(a); moved = this._slide(e, (dx * c - dy * s) * step * 0.7, (dx * s + dy * c) * step * 0.7); if (moved > step * 0.15) break; }
     }
-    e.x = nx; e.y = ny; e.facing = Math.atan2(dy, dx); this._setAnim(e, 'run');
+    e.facing = Math.atan2(dy, dx); e.desiredFacing = e.facing;
+    this._setAnim(e, 'run');
   }
   /** Path toward (tx,ty). Returns true when within `stop` distance. */
   _followTo(e, tx, ty, stop = 0.3, chase = false) {
     if (!canMove(e)) return false;
     const d = Math.hypot(tx - e.x, ty - e.y);
-    if (d <= stop) return true;
-    const needPath = !e.path || !e.pathGoal || Math.hypot(e.pathGoal.x - tx, e.pathGoal.y - ty) > (chase ? 2 : 0.5) || this.time > e.pathAt + 2;
+    if (d <= stop) { e.path = null; return true; }
+    const goalMoved = e.pathGoal ? Math.hypot(e.pathGoal.x - tx, e.pathGoal.y - ty) : Infinity;
+    let needPath = !e.path || goalMoved > (chase ? Math.max(1.5, d * 0.15) : 0.5) || this.time > e.pathAt + 2 || (e.stuckFor || 0) > 0.4;
+    if (!needPath && goalMoved > 0.05 && e.path.length === 1) { e.path[0] = { x: tx, y: ty }; e.pathGoal = { x: tx, y: ty }; } // retarget the straight leg in place (no re-path)
     if (needPath) {
       if (this.nav.lineClear(e.x, e.y, tx, ty)) e.path = [{ x: tx, y: ty }];
       else e.path = this.nav.findPath(e.x, e.y, tx, ty);
-      e.pathGoal = { x: tx, y: ty }; e.pathAt = this.time;
+      e.pathGoal = { x: tx, y: ty }; e.pathAt = this.time; e.stuckFor = 0;
     }
     if (!e.path || !e.path.length) return true;
+    // look-ahead smoothing: cut the corner as soon as the next waypoint is visible
+    if (e.path.length > 1 && (this.tickCount + e.id) % 6 === 0 && this.nav.lineClear(e.x, e.y, e.path[1].x, e.path[1].y)) e.path.shift();
     let wp = e.path[0];
     const last = e.path.length === 1;
     const sp = e.stats.moveSpeed;
-    // stop short on final waypoint
     if (last) {
       const rem = Math.hypot(wp.x - e.x, wp.y - e.y);
       if (rem <= stop) { e.path = null; return true; }
+      // stop exactly at `stop` distance (no overshoot / oscillation)
+      if (rem - stop < sp * DT) { const k = (rem - stop) / rem; this._slide(e, (wp.x - e.x) * k, (wp.y - e.y) * k); e.facing = Math.atan2(wp.y - e.y, wp.x - e.x); e.path = null; return true; }
     }
     const reached = this._stepToward(e, wp.x, wp.y, sp);
     if (reached || Math.hypot(wp.x - e.x, wp.y - e.y) < 0.3) { e.path.shift(); if (!e.path.length) { e.path = null; return Math.hypot(tx - e.x, ty - e.y) <= Math.max(stop, 0.5); } }
     return false;
   }
 
+  /**
+   * Soft separation. Heroes ghost through allied minions/summons and are never shoved by minions or camps
+   * (minions yield to heroes). Pushes are accumulated and rate-limited, so crowds spread smoothly (no jitter).
+   */
   _separate() {
-    const us = [];
-    for (const e of this.entities.values()) if (e.alive && (e.kind === 'hero' || e.kind === 'minion' || e.kind === 'monster' || e.kind === 'summon') && !e.dash && !e.ghost) us.push(e);
-    for (let i = 0; i < us.length; i++) {
+    const us = this._sepList || (this._sepList = []); us.length = 0;
+    for (const e of this.entities.values()) if (e.alive && (e.kind === 'hero' || e.kind === 'minion' || e.kind === 'monster' || (e.kind === 'summon' && !e.static)) && !e.dash && !e.ghost) { e._px = 0; e._py = 0; us.push(e); }
+    const n = us.length;
+    for (let i = 0; i < n; i++) {
       const a = us[i];
-      for (let j = i + 1; j < us.length; j++) {
+      for (let j = i + 1; j < n; j++) {
         const b = us[j];
-        const dx = b.x - a.x, dy = b.y - a.y; const rr = (a.radius + b.radius) * 0.85;
-        if (Math.abs(dx) > rr || Math.abs(dy) > rr) continue;
+        const dx = b.x - a.x, dy = b.y - a.y;
+        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) continue;
+        const ah = a.kind === 'hero', bh = b.kind === 'hero';
+        let rr, wa, wb;
+        if (ah && bh) { rr = (a.radius + b.radius) * (a.team === b.team ? 0.55 : 0.75); wa = wb = 0.5; }
+        else if (ah || bh) {
+          const h = ah ? a : b, o = ah ? b : a;
+          if (o.team === h.team) continue;                         // ghost through own minions & pets
+          if (o.epic) { rr = h.radius * 0.6 + o.radius; ah ? (wa = 1, wb = 0) : (wa = 0, wb = 1); }
+          else { rr = h.radius * 0.45 + o.radius * 0.8; ah ? (wa = 0, wb = 1) : (wa = 1, wb = 0); }   // minion yields, hero never shoved
+        } else {
+          rr = (a.radius + b.radius) * 0.8;
+          const sa = a.epic ? 0 : (a.windup || a.x === a.prevX && a.y === a.prevY) ? 0.35 : 1;
+          const sb = b.epic ? 0 : (b.windup || b.x === b.prevX && b.y === b.prevY) ? 0.35 : 1;
+          if (sa + sb === 0) continue;
+          wa = sa / (sa + sb); wb = sb / (sa + sb);
+        }
         const d2 = dx * dx + dy * dy; if (d2 >= rr * rr) continue;
-        const d = Math.sqrt(d2) || 0.01; const push = (rr - d) * 0.5;
-        const nx = d2 ? dx / d : 1, ny = d2 ? dy / d : 0;
-        // heroes are pushed less by minions
-        const wa = a.kind === 'hero' && b.kind !== 'hero' ? 0.25 : a.epic ? 0 : 1;
-        const wb = b.kind === 'hero' && a.kind !== 'hero' ? 0.25 : b.epic ? 0 : 1;
-        const ax = a.x - nx * push * wa, ay = a.y - ny * push * wa, bx = b.x + nx * push * wb, by = b.y + ny * push * wb;
-        if (!this.nav.blocked(ax, ay)) { a.x = ax; a.y = ay; }
-        if (!this.nav.blocked(bx, by)) { b.x = bx; b.y = by; }
+        const d = Math.sqrt(d2);
+        let nx, ny; if (d > 1e-4) { nx = dx / d; ny = dy / d; } else { const ang = ((a.id * 7 + b.id * 13) % 16) / 16 * Math.PI * 2; nx = Math.cos(ang); ny = Math.sin(ang); }
+        const ov = rr - d;
+        a._px -= nx * ov * wa; a._py -= ny * ov * wa; b._px += nx * ov * wb; b._py += ny * ov * wb;
       }
+    }
+    const maxStep = 5.5 * DT;   // soft: at most 5.5 u/s of separation drift
+    for (const e of us) {
+      let px = e._px, py = e._py; if (!px && !py) continue;
+      const l = Math.hypot(px, py); const k = Math.min(1, maxStep / l) * 0.6; px *= k; py *= k;
+      if (e.kind === 'tower' || e.static) continue;
+      this._slide(e, px, py);
     }
   }
 
   // ---------------- minions ----------------
   _spawning() {
     if (this.time >= this.nextWave) { this._spawnWave(); this.nextWave += C.WAVE_INTERVAL; }
+    if (!this.finalSwellWarned && this.time >= C.FINAL_SWELL_AT - C.FINAL_SWELL_WARN) {
+      this.finalSwellWarned = true;
+      this.emit({ t: 'announce', kind: 'finalswell_warn', text: 'The Final Swell rises in 10 seconds…' });
+      this.emit({ t: 'mapchange', phase: 'telegraph', kind: 'finalswell', zone: { ...C.FINAL_SWELL_ZONE }, team: 2, at: C.FINAL_SWELL_AT });
+    }
+    if (!this.finalSwell && this.time >= C.FINAL_SWELL_AT) this._startFinalSwell();
     for (const c of this.camps) if (!c.unitId && c.respawnAt != null && this.time >= c.respawnAt) { c.respawnAt = null; this._spawnCamp(c); }
     for (const key of ['wyrm', 'colossus']) { const o = this.objectives[key]; if (!o.alive && o.respawnAt != null && this.time >= o.respawnAt) { o.respawnAt = null; this._spawnObjective(key); } }
   }
   _spawnWave() {
     this.waveCount++;
     const types = ['melee', 'melee', 'melee', 'caster', 'caster'];
-    if (this.waveCount % 3 === 0) types.splice(3, 0, 'siege');
-    const k = 1 + (this.time / 60) * 0.04;
+    if (this.waveCount % C.SIEGE_EVERY === 0) types.splice(3, 0, 'siege');
+    const k = (1 + (this.time / 60) * 0.04) * (this.finalSwell ? 1.6 : 1);
     for (const team of [0, 1]) for (const lane of ['top', 'bot']) {
       const pts = MAP.laneFor(lane, team);
       types.forEach((ty, i) => {
@@ -614,6 +758,13 @@ export class Match {
         });
       });
     }
+  }
+  /** THE FINAL SWELL (14:00): stronger minions, brittle structures, doubled next Wyrm/Colossus rewards. */
+  _startFinalSwell() {
+    this.finalSwell = true; this.swellBonus = { wyrm: true, colossus: true };
+    for (const e of this.entities.values()) if (e.kind === 'minion' && e.alive) { e.baseStats.maxHp *= 1.6; e.baseStats.power *= 1.6; e.maxHp *= 1.6; e.hp *= 1.6; }
+    this.emit({ t: 'finalswell', at: this.time });
+    this.emit({ t: 'announce', kind: 'finalswell', text: 'THE FINAL SWELL! Minions surge — structures crumble.' });
   }
   _updateMinion(e) {
     if (e.dash) { this._dashStep(e); return; }
@@ -640,7 +791,7 @@ export class Match {
     if (e.wp < pts.length) {
       const wp = pts[e.wp];
       if (Math.hypot(wp.x - e.x, wp.y - e.y) < 2.5) e.wp++;
-      if (e.wp < pts.length) { const w = pts[e.wp]; if (!this._stepToward(e, w.x, w.y, e.stats.moveSpeed)) this._followTo(e, w.x, w.y, 1); }
+      if (e.wp < pts.length) { const w = pts[e.wp]; this._followTo(e, w.x, w.y, 1); }
     } else {
       const core = MAP.cores[1 - e.team]; this._followTo(e, core.x, core.y, 4);
     }
@@ -659,11 +810,7 @@ export class Match {
       || this.findUnitAt(t.x, t.y, range, u => u.kind === 'hero' && u.team !== t.team && isTargetable(u) && u.vis[t.team]);
     if (!cur || cur.id !== t.target) { t.heat = 0; }
     t.target = cur?.id ?? null;
-    if (cur && !t.windup && this.time >= t.nextAttackAt) {
-      t.windup = { targetId: cur.id, at: this.time + 0.15 }; t.nextAttackAt = this.time + 1 / t.stats.attackSpeed;
-      t.anim = { state: 'attack', t: 0 };
-      this.emit({ t: 'attack', srcId: t.id, targetId: cur.id });
-    }
+    if (cur && !t.windup && this.time >= t.nextAttackAt) this._startAttack(t, cur);
   }
   _heroHitAllyInRange(h, tower) {
     // approximate: hero is near an allied (tower team) hero that was damaged recently
@@ -775,7 +922,7 @@ export class Match {
     else target.removeAt = this.time + 0.8;
   }
   _preventDeath(t, src) { let prevented = false; if (t.kind === 'hero') { const info = { prevent: false }; this.callHooks(t, 'beforeDeath', src, info); prevented = info.prevent; } return prevented; }
-  _respawnTime(h) { return Math.min(32, 4 + h.level * 2.4 + Math.max(0, this.time - 900) / 60); }
+  _respawnTime(h) { const late = Math.max(0, this.time - 600) / 60; return Math.min(42, 4 + h.level * 2.3 + late * 1.6 + (this.finalSwell ? 3 : 0)); }
   _heroKilled(v, kHero, killer) {
     v.deaths++; v.respawnAt = this.time + this._respawnTime(v);
     this.callHooks(v, 'onDeath', killer);
@@ -788,7 +935,7 @@ export class Match {
     if (kHero) { kHero.kills++; kHero.streak++; kHero.deathsInRow = 0; this._gold(kHero, bounty); }
     for (const a of assists) { a.assists++; this._gold(a, C.GOLD.assist); }
     v.streak = 0; v.deathsInRow = (v.deathsInRow || 0) + 1; v.damagers = {};
-    this._shareXp(v, team, 140 + 45 * v.level);
+    this._shareXp(v, team, (140 + 45 * v.level) * C.ECON);
     const text = kHero ? `${kHero.name} slew ${v.name}` : `${v.name} was executed`;
     this.emit({ t: 'kill', killerId: kHero?.id ?? killer?.id ?? null, victimId: v.id, assistIds: assists.map(a => a.id), text, team });
     if (kHero && kHero.streak >= 3) this.emit({ t: 'announce', text: kHero.streak >= 5 ? `${kHero.name} is UNSTOPPABLE!` : `${kHero.name} is on a rampage!`, team, kind: 'streak' });
@@ -810,11 +957,12 @@ export class Match {
       const o = this.objectives[type]; o.alive = false; o.id = null; o.respawnAt = this.time + 30; return;
     }
     const o = this.objectives[type]; o.alive = false; o.id = null; o.respawnAt = this.time + s.respawn;
-    for (const h of this.heroes) if (h.team === team) this._giveXp(h, s.xp * 0.5);
+    const bonus = this.swellBonus?.[type] ? 2 : 1; if (bonus > 1) this.swellBonus[type] = false;
+    for (const h of this.heroes) if (h.team === team) this._giveXp(h, s.xp * 0.5 * bonus);
     if (type === 'wyrm') {
       const el = mon.element; const ts = this.teamStats[team];
       ts.wyrms.push(el); this.objectives.soul[team] = ts.wyrms.length;
-      for (const h of this.heroes) if (h.team === team) this._gold(h, 100);
+      for (const h of this.heroes) if (h.team === team) this._gold(h, 100 * C.ECON * bonus);
       this.emit({ t: 'objective', key: 'wyrm', team, element: el });
       this.emit({ t: 'announce', text: `${team === 0 ? 'Blue' : 'Red'} team slew the ${C.ELEMENT_INFO[el].name}!`, team, kind: 'wyrm', element: el });
       if (ts.wyrms.length === 3 && !ts.soul) this._grantSoul(team, el);
@@ -822,7 +970,7 @@ export class Match {
       this._livingMap(team, el);
     } else if (type === 'colossus') {
       const ts = this.teamStats[team]; ts.colossus++; ts.mightUntil = this.time + C.MIGHT_DURATION;
-      for (const h of this.heroes) if (h.team === team) { this._gold(h, 250); if (h.alive) { h.buffs = h.buffs.filter(b => b.key !== 'might'); h.buffs.push({ key: 'might', until: ts.mightUntil }); } }
+      for (const h of this.heroes) if (h.team === team) { this._gold(h, 250 * C.ECON * bonus); if (h.alive) { h.buffs = h.buffs.filter(b => b.key !== 'might'); h.buffs.push({ key: 'might', until: ts.mightUntil }); } }
       this.emit({ t: 'objective', key: 'colossus', team });
       this.emit({ t: 'announce', text: `${team === 0 ? 'Blue' : 'Red'} team claimed Colossus Might!`, team, kind: 'colossus' });
     }
@@ -881,7 +1029,7 @@ export class Match {
     }
   }
   _economy() {
-    if (this.time > C.WAVE_FIRST && this.tickCount % 30 === 0) for (const h of this.heroes) this._gold(h, C.PASSIVE_GOLD);
+    if (this.time > C.WAVE_FIRST && this.tickCount % ECON_EVERY === 0) for (const h of this.heroes) this._gold(h, C.PASSIVE_GOLD);
   }
 
   // ---------------- vision ----------------

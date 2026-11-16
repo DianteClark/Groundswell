@@ -55,7 +55,7 @@ export function dealDamage(m, src, target, amount, opts = {}) {
   if (target.protected && target.protected(m)) return 0; // towers/core protection
   // resolve owner (projectiles/areas/summons credit their owner)
   const owner = src ? (src.ownerId != null ? (m.entities.get(src.ownerId) || src) : src) : null;
-  const info = { amount, type: opts.type || 'ability', ability: opts.ability, src: owner, target, crit: false };
+  const info = { amount, type: opts.type || 'ability', ability: opts.ability, src: owner, target, crit: false, empowered: !!opts.empowered, heavy: !!opts.heavy };
   if (!opts.noHooks) {
     if (owner) m.callHooks(owner, 'modifyDamageDealt', target, info);
     m.callHooks(target, 'modifyDamageTaken', owner, info);
@@ -69,6 +69,7 @@ export function dealDamage(m, src, target, amount, opts = {}) {
     dmg = dmg * 100 / (100 + eff);
   }
   if (target.damageReduction) dmg *= (1 - target.damageReduction);
+  if (m.finalSwell && (target.kind === 'tower' || target.kind === 'core')) dmg *= 1.25;
   dmg = Math.max(0, dmg);
   // shields absorb
   let toHp = dmg;
@@ -86,7 +87,11 @@ export function dealDamage(m, src, target, amount, opts = {}) {
   }
   if (target.kind === 'hero') target.damageTaken = (target.damageTaken || 0) + dmg;
   if (target.kind === 'hero') { target.lastCombatAt = m.time; if (toHp > 0) interruptRecall(m, target); }
-  m.emit({ t: 'damage', srcId: src?.id, targetId: target.id, amount: Math.round(dmg), type: info.type, ability: info.ability, crit: info.crit });
+  const ev = { t: 'damage', srcId: src?.id, targetId: target.id, amount: Math.round(dmg), type: info.type, ability: info.ability, crit: info.crit };
+  const big = target.kind === 'hero' || target.kind === 'monster';
+  if (info.crit || info.heavy || opts.execute || (info.type === 'ability' && big && dmg >= target.maxHp * 0.12)) ev.heavy = true;
+  if (info.empowered) ev.empowered = true;
+  m.emit(ev);
   // lifesteal
   if (owner && owner.kind === 'hero' && owner.alive && !opts.noLifesteal && src.kind !== 'summon' && owner.stats.lifesteal > 0 && target.kind !== 'tower' && target.kind !== 'core') {
     const ls = info.type === 'auto' ? owner.stats.lifesteal : owner.stats.lifesteal * 0.35;
@@ -95,7 +100,31 @@ export function dealDamage(m, src, target, amount, opts = {}) {
   if (owner && !opts.noHooks) m.callHooks(owner, 'onDamageDealt', target, { amount: dmg, type: info.type, ability: info.ability });
   if (!opts.noHooks) m.callHooks(target, 'onDamageTaken', owner, { amount: dmg, type: info.type });
   if (target.hp <= 0) m.kill(target, src);
+  if (!target.alive) ev.kill = true;
+  if (ev.heavy || ev.kill || ev.empowered) impactFeedback(m, owner, target, ev, dmg);
   return dmg;
+}
+
+/** Feel events for render/audio: camera kick ('impact') and, when the LOCAL hero is involved, a tiny 'hitstop'. */
+function impactFeedback(m, owner, target, ev, dmg) {
+  const heroKill = ev.kill && target.kind === 'hero';
+  const local = m._localHeroId;
+  const localInvolved = local != null && (owner?.id === local || target.id === local);
+  if (!ev.heavy && !heroKill && ev.empowered) {
+    if (target.kind === 'hero' || target.kind === 'monster') m.emit({ t: 'impact', x: target.x, y: target.y, strength: 0.4, kind: 'empowered', srcId: owner?.id ?? null, targetId: target.id });
+    if (!ev.kill) return;
+  }
+  if (!ev.heavy && !heroKill) {
+    // plain kills: only the local player's last hits get a light kick
+    if (ev.kill && localInvolved && owner?.id === local && (target.kind === 'minion' || target.kind === 'monster')) m.emit({ t: 'impact', x: target.x, y: target.y, strength: 0.2, kind: 'lasthit', srcId: owner.id, targetId: target.id });
+    return;
+  }
+  const strength = heroKill ? 1 : Math.min(0.85, 0.35 + dmg / Math.max(1, target.maxHp));
+  m.emit({ t: 'impact', x: target.x, y: target.y, strength: Math.round(strength * 100) / 100, kind: heroKill ? 'kill' : ev.crit ? 'crit' : ev.empowered ? 'empowered' : 'heavy', srcId: owner?.id ?? null, targetId: target.id });
+  if (localInvolved && (heroKill || target.kind === 'hero' || target.epic) && (m._hitstopAt ?? -1) + 0.15 <= m.time) {
+    m._hitstopAt = m.time;
+    m.emit({ t: 'hitstop', duration: heroKill ? 0.09 : target.kind === 'hero' ? 0.06 : 0.04, srcId: owner?.id ?? null, targetId: target.id });
+  }
 }
 
 /** Projectile. opts: { src, x, y, dirX, dirY | targetId (homing), speed, range, radius, team, visual:'key', pierce:false,
@@ -125,13 +154,18 @@ export function updateProjectile(m, p) {
     p.dirX = dx / d; p.dirY = dy / d; p.facing = Math.atan2(dy, dx);
     p.x += p.dirX * step; p.y += p.dirY * step; return;
   }
-  const step = p.speed * DT;
+  const step = Math.min(p.speed * DT, Math.max(0, p.range - p.traveled));
+  const x0 = p.x, y0 = p.y;
   p.x += p.dirX * step; p.y += p.dirY * step; p.traveled += step;
   if (p.blockedByWalls && m.nav.blocked(p.x, p.y)) { p.onEnd?.(m, p); m.remove(p); return; }
   if (p.hitsUnits) {
-    const cands = m.unitsInRadius(p.x, p.y, p.radius + 4.5, e => e.team !== p.team && isTargetable(e) && e.kind !== 'projectile' && e.kind !== 'area' && !p.hit.has(e.id) && (!p.hitFilter || p.hitFilter(e)));
+    // swept test over this tick's segment, nearest-first (no tunnelling, deterministic order)
+    const cands = m.unitsInRadius((x0 + p.x) / 2, (y0 + p.y) / 2, p.radius + step / 2 + 3, e => e.team !== p.team && isTargetable(e) && e.kind !== 'projectile' && e.kind !== 'area' && !p.hit.has(e.id) && (!p.hitFilter || p.hitFilter(e)));
+    const along = (e) => (e.x - x0) * p.dirX + (e.y - y0) * p.dirY;
+    if (cands.length > 1) cands.sort((a, b) => along(a) - along(b) || a.id - b.id);
     for (const e of cands) {
-      if (Math.hypot(e.x - p.x, e.y - p.y) <= p.radius + e.radius) {
+      const t = Math.max(0, Math.min(step, along(e)));
+      if (Math.hypot(e.x - (x0 + p.dirX * t), e.y - (y0 + p.dirY * t)) <= p.radius + e.radius) {
         p.hit.add(e.id);
         const stop = p.onHit ? p.onHit(m, e, p) : true;
         if (!p.pierce || stop === true) { if (!p.pierce || stop === true) { m.remove(p); return; } }

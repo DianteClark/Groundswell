@@ -73,9 +73,9 @@ export function nextItemStep(itemId, cur) {
 export function itemDisplay(cur) {
   if (!cur) return null;
   const it = ITEM_BY_ID[cur.id];
-  if (!it) return { icon: '?', name: cur.id };
-  if (cur.branch && it.branches?.[cur.branch]) return { icon: it.branches[cur.branch].icon || it.icon, name: it.branches[cur.branch].name, tier: 3, final: true };
-  return { icon: it.icon, name: it.name + (cur.tier > 1 ? ' ' + 'I'.repeat(cur.tier) : ''), tier: cur.tier || 1 };
+  if (!it) return { icon: '?', name: cur.id, src: null };
+  if (cur.branch && it.branches?.[cur.branch]) return { icon: it.branches[cur.branch].icon || it.icon, name: it.branches[cur.branch].name, tier: 3, final: true, src: it.branches[cur.branch] };
+  return { icon: it.icon, name: it.name + (cur.tier > 1 ? ' ' + 'I'.repeat(cur.tier) : ''), tier: cur.tier || 1, src: it };
 }
 export function fmtStats(stats) {
   if (!stats) return '';
