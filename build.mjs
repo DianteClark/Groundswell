@@ -1,0 +1,11 @@
+import * as esbuild from 'esbuild';
+import fs from 'fs';
+const entry = process.argv[2] || 'src/main.js';
+const out = process.argv[3] || 'dist/index.html';
+const r = await esbuild.build({ entryPoints: [entry], bundle: true, format: 'iife', minify: !process.env.DEV, write: false, target: 'es2020', logLevel: 'warning' });
+const js = r.outputFiles[0].text.replace(/<\/script/g, '<\\/script');
+const css = fs.existsSync('src/style.css') ? fs.readFileSync('src/style.css', 'utf8') : '';
+const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><title>Groundswell</title><style>${css}</style></head><body><div id="app"></div><script>${js}</script></body></html>`;
+fs.mkdirSync('dist', { recursive: true });
+fs.writeFileSync(out, html);
+console.log('built', out, (html.length / 1024).toFixed(0) + 'KB');
