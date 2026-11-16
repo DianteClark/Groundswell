@@ -13,7 +13,7 @@ const oct = (r) => new THREE.OctahedronGeometry(r, 0);
 const dodec = (r) => new THREE.DodecahedronGeometry(r, 0);
 
 const STONE = '#d3c9b6', STONE2 = '#a99e8b', DARK = '#3e3a46', GOLD = '#e8c46a';
-export const TEAM_TRIM = ['#2f6fe0', '#e0404e', '#c9a85a'];
+export const TEAM_TRIM = ['#2f6fe0', '#d42a2a', '#c9a85a'];
 
 // rune circle texture (additive decals)
 const _runes = {};

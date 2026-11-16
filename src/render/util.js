@@ -1,7 +1,7 @@
 // Shared render helpers: colors, textures, materials.
 import * as THREE from 'three';
 
-export const TEAM_COLORS = [0x3d8bff, 0xff4d5a, 0xd9c27a];
+export const TEAM_COLORS = [0x3d8bff, 0xff3030, 0xd9c27a];
 export const TEAM_DARK = [0x1d4fa8, 0xa8222f, 0x7a6a3a];
 export const teamColor = (t) => TEAM_COLORS[t] ?? TEAM_COLORS[2];
 export const col = (c) => (c instanceof THREE.Color ? c.clone() : new THREE.Color(c));

@@ -2,6 +2,7 @@
 import Save from '../meta/save.js';
 import { ULT_LEVEL, TICK_RATE } from '../sim/constants.js';
 import { frag } from './dom.js';
+import { ico } from './icons.js';
 
 const ALIVE = (u) => u && u.alive && !u.removed;
 const TARGETABLE = (u) => !(u.statuses || []).some(s => s.key === 'untargetable' || s.key === 'invisible');
@@ -174,8 +175,8 @@ export class Input {
     }
     // attack buttons: main (smart), last-hit (minions/monsters), structure. Tap = one attack; hold = keep attacking
     // (with the joystick held, the hero walks between swings = automatic kiting).
-    this.lhBtn = frag('<button id="gs-btn-lasthit" class="ab sm ab-lh" aria-label="Last hit"><span class="ab-ic">🗡️</span></button>');
-    this.twBtn = frag('<button id="gs-btn-tower" class="ab sm ab-tw" aria-label="Attack structure"><span class="ab-ic">🏰</span></button>');
+    this.lhBtn = frag(`<button id="gs-btn-lasthit" class="ab sm ab-lh" aria-label="Last hit"><span class="ab-ic">${ico('ui:last', 40) || '🗡️'}</span></button>`);
+    this.twBtn = frag(`<button id="gs-btn-tower" class="ab sm ab-tw" aria-label="Attack structure"><span class="ab-ic">${ico('ui:tower', 40) || '🏰'}</span></button>`);
     const host = hud.els.attack?.parentElement || root; host.appendChild(this.lhBtn); host.appendChild(this.twBtn);
     const bindAtk = (btn, mode) => {
       on(btn, 'pointerdown', e => {

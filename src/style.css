@@ -910,3 +910,20 @@ html.cl .loading{padding:6px calc(14px + var(--sar)) calc(6px + var(--sab)) calc
 .ab-icw { position:relative; display:inline-flex; flex:none; margin-right:10px; }
 .ab-icw .ab-k { position:absolute; right:-6px; bottom:-6px; transform:scale(.8); }
 .buy-icon .gs-ico, .pop-glyph .gs-ico, .of-glyph .gs-ico { margin:0 auto; filter:drop-shadow(0 8px 24px rgba(0,0,0,.5)); }
+/* 3.0 HUD ability buttons: full-bleed framed icons, glassy rim, ult glow */
+.hud .ab[data-slot] .ab-ic{position:absolute;inset:0;padding:0!important;border-radius:inherit;overflow:hidden}
+.hud .ab[data-slot] .ab-ic .gs-ico{width:104%;height:104%;margin:-2%}
+.hud .ab[data-slot]{background:#0b1024;border:2px solid rgba(190,215,255,.55);box-shadow:0 4px 14px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.25)}
+.hud .ab[data-slot]::after{content:'';position:absolute;inset:0;border-radius:inherit;background:linear-gradient(180deg,rgba(255,255,255,.22),transparent 45%);pointer-events:none}
+.hud .ab-r[data-slot]{border-color:#ffd76a;box-shadow:0 0 0 1px rgba(255,215,106,.35),0 0 16px rgba(255,190,80,.35),0 4px 14px rgba(0,0,0,.55)}
+.hud .ab-relic[data-slot]{border-color:#d8b8ff}
+.hud .ab.cd .ab-ic{opacity:.55;filter:saturate(.4)}
+.hud .ab-t{z-index:2;font-size:calc(var(--abs) * .38);color:#fff}
+.hud .ab-k{z-index:2;background:rgba(6,9,22,.8);border-radius:5px;padding:0 3px;bottom:1px;font-size:9px;line-height:13px}
+.hud .ab-atk{background:radial-gradient(circle at 40% 30%,#ff6a5a,#8a1c2a 70%,#4a0d18);border:2px solid #ffb19e;box-shadow:0 0 18px rgba(255,90,70,.35),0 5px 16px rgba(0,0,0,.6)}
+.hud .ab-atk .ab-ic{padding:24%!important}
+.hud .ab.sm{background:radial-gradient(circle at 40% 30%,#34428a,#121838);border-color:rgba(190,215,255,.5)}
+/* 3.0: compact status card so the hero is never covered */
+.hud.touch .h-unit{transform:scale(.78);transform-origin:top left}
+@media (max-height:390px){.hud.touch .h-unit{transform:scale(.7)}}
+.hud .ab .ab-k{width:auto;height:auto;min-width:0;border:0;display:block;place-items:initial}

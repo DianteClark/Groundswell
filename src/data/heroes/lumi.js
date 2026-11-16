@@ -39,14 +39,14 @@ function constellation(api, h, marks) {
 export default {
   id: 'lumi', name: 'Lumi', title: 'Starweaver', role: 'Mage', difficulty: 2,
   color: '#9b8cff', lore: 'A cartographer of the night sky who learned that every star she names can be pulled down.',
-  base: { maxHp: 615, power: 54, armor: 22, attackRange: 11, attackSpeed: 0.72, moveSpeed: 9.8, hpRegen: 2.2 },
+  base: { maxHp: 625, power: 56, armor: 22, attackRange: 11, attackSpeed: 0.72, moveSpeed: 9.8, hpRegen: 2.2 },
   growth: { maxHp: 86, power: 4.0, armor: 2.8, attackSpeed: 0.015, hpRegen: 0.18 },
   attackRatio: 1, ranged: true, projectile: 'auto_lumi', missileSpeed: 50,
   abilities: {
     passive: { name: 'Constellation', desc: 'Abilities leave Star Marks (6s). When 3 marks exist they link up and detonate: 60 (+20/lvl, +50% Power) to enemies on the lines or inside the triangle.' },
     q: {
       name: 'Star Bolt', desc: 'Fire a bolt (13m) dealing 80 (+24/lvl, +78% Power) to the first enemy hit and leaving a Star Mark there.',
-      cd: 4.5, range: 13, targeting: 'skillshot', tags: ['poke', 'burst', 'farm'],
+      cd: 4, range: 13, targeting: 'skillshot', tags: ['poke', 'burst', 'farm'],
       bot: { kind: 'skillshot', speed: 40, radius: 0.95, poke: true },
       cast(api, h, aim) {
         const pierce = api.aug(h, 3, 'a'); let hits = 0;

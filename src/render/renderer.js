@@ -19,7 +19,7 @@ import { CombatFx } from './fx/combat.js';
 
 const PI = Math.PI;
 const PITCH = 55 * PI / 180;
-const LOCAL_HP = 0x59d65a, ALLY_HP = 0x4a9dff, ENEMY_HP = 0xff4d5a, NEUTRAL_HP = 0xe8b040;
+const LOCAL_HP = 0x59d65a, ALLY_HP = 0x4a9dff, ENEMY_HP = 0xff3a32, NEUTRAL_HP = 0xe8b040;
 const has = (e, k) => !!e.statuses && e.statuses.some((s) => s.key === k);
 const angLerp = (a, b, t) => { let d = ((b - a + PI) % (2 * PI) + 2 * PI) % (2 * PI) - PI; return a + d * t; };
 const RECALL_STYLES = {
@@ -324,8 +324,8 @@ export class Renderer {
       this._lastHP = this._lastHP || { x: 0, z: 0 }; this._lastHP.x = p.x; this._lastHP.z = p.z;
       const la = lh.alive ? 0.22 : 0; const lx = clamp(this.heroVel.x * la, -3, 3), lz = clamp(this.heroVel.y * la, -2.2, 2.2);
       const kk = 1 - Math.exp(-dt * 2.5); this.lookAhead.x += (lx - this.lookAhead.x) * kk; this.lookAhead.y += (lz - this.lookAhead.y) * kk;
-      // framing: hero sits slightly left of centre (ability cluster lives bottom-right)
-      const fx = phone ? 3.2 : 1.6, fz = phone ? 1.4 : 0.6;
+      // framing: hero centred so neither the status card nor the controls cover it
+      const fx = phone ? 0.6 : 0.4, fz = phone ? -2.2 : 0; // phones: centred, a touch low (HUD card top-left, controls bottom-right)
       tx = p.x + this.panOff.x + this.lookAhead.x + fx; tz = p.z + this.panOff.y + this.lookAhead.y + fz;
     } else { tx = this.camFree.x; tz = this.camFree.z; this._lastHP = null; }
     const W = this.match?.map?.width || 240, H = this.match?.map?.height || 160;

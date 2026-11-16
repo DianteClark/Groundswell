@@ -77,7 +77,7 @@ export class Hud {
     this.els.face.innerHTML = heroChipHTML(h?.heroId, 52);
     for (const s of SLOTS) {
       const d = this.abilityDef(s);
-      this.els.abilities[s].querySelector('.ab-ic').innerHTML = d ? (ico(d, 64, { frame: 'none' }) || esc(d.icon || TAG_GLYPH[(d.tags || [])[0]] || (d.name || s)[0])) : '·';
+      this.els.abilities[s].querySelector('.ab-ic').innerHTML = d ? (ico(d, 64) || esc(d.icon || TAG_GLYPH[(d.tags || [])[0]] || (d.name || s)[0])) : '·';
     }
     this.els.prio.classList.toggle('on', !!this.settings.champPriority);
     this._mmBase = this._drawMinimapBase();
