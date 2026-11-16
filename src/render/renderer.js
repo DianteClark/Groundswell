@@ -115,6 +115,25 @@ export class Renderer {
     this.vfx.ring(x, y, { color: '#ffffff', r0: 0.9, r1: 0.1, dur: 0.25, easeIn: true, alpha: 0.6 });
     this.vfx.flash(x, 0.4, y, { color: col, size: 1.6, dur: 0.25, alpha: 0.7 });
   }
+  /** Locked attack target marker (Wild Rift-style). id or null. */
+  setTargetLock(id) {
+    this.lockId = id ?? null;
+    if (!this.lockMesh) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: thinRingTexture(), color: '#ff3b3b', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      m.renderOrder = 15; this.lockMesh = m; this.scene.add(m);
+      const tri = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.7, 3).rotateX(Math.PI), new THREE.MeshBasicMaterial({ color: '#ff4a3a' })); tri.renderOrder = 16; this.lockTri = tri; this.scene.add(tri);
+    }
+  }
+  _updateLock() {
+    if (!this.lockMesh) return;
+    const t = this.lockId != null ? this._ent(this.lockId) : null;
+    const on = !!(t && t.alive !== false && this._visible(t));
+    this.lockMesh.visible = this.lockTri.visible = on; if (!on) return;
+    const p = this._ipos(t); const r = (t.radius || 1) * 2.6 * (1 + 0.06 * Math.sin(this.time * 7));
+    this.lockMesh.position.set(p.x, 0.14, p.z); this.lockMesh.scale.set(r, 1, r); this.lockMesh.rotation.y = this.time * 1.5;
+    const h = this.views.get(t.id)?.height || this.views.get(t.id)?.rig?.def?.height || 3;
+    this.lockTri.position.set(p.x, h + 1.4 + 0.15 * Math.sin(this.time * 6), p.z);
+  }
   /** Ability aiming overlay. o: {slot, heroId, targeting|kind, range, radius, width, x, y, tx, ty, dirX, dirY, cancel} */
   showIndicator(o) { this.ind = { ...o }; this._indGroup(); this.indG.visible = true; }
   hideIndicator() { this.ind = null; if (this.indG) this.indG.visible = false; }
@@ -263,6 +282,7 @@ export class Renderer {
       for (let i = this.telegraphs.length - 1; i >= 0; i--) { const t = this.telegraphs[i]; t.update(dt, this.time, m.time ?? 0, this.vfx); if (t.done) { t.dispose(); this.telegraphs.splice(i, 1); } }
       this.mapView?.update(this.time, dt, m, this.vfx, this._ctx || (this._ctx = { near: (x, z) => Math.abs(x - this.camT.x) < 50 && Math.abs(z - this.camT.z) < 40 }));
       this.combatFx?.update?.(dt);
+      this._updateLock();
       // living map: final swell mood
       const sw = m.finalSwell ? 1 : this.swellTele ? 0.35 : 0; this.lights.swellTarget = sw;
       this.mapView?.terrain.setSwell(this.lights.swell);
@@ -422,13 +442,15 @@ export class Renderer {
         if (ev.amount >= 20 && this._evVisible(p.x, p.z) && this._visible(t)) V.burst(p.x, 0.5, p.z, '#7dff9a', 4, { style: 'embers', radius: 0.8, intensity: 0.7 });
         break;
       }
+      case 'attack_cancel': { this._pendSlash?.delete(ev.srcId); break; }
       case 'attack': {
         const s = this._ent(ev.srcId), t = this._ent(ev.targetId); const v = this.views.get(ev.srcId); if (v) v.atk = (v.atk || 0) + 1;
         if (!s || !t || !this._visible(s) || !this._evVisible(s.x, s.y)) return;
         const c = this._colorsFor(ev.srcId);
         if (s.kind === 'hero' && !s.def?.ranged) {
           const ang = Math.atan2(t.y - s.y, t.x - s.x); const p = this._ipos(s);
-          this._later(0.12, () => { V.slash(p.x + Math.cos(ang) * 1.0, 1.3, p.z + Math.sin(ang) * 1.0, ang, { color: c.vfx, r: 2.0 + (s.radius || 1) * 0.5, flip: v && v.atk % 2, alpha: 0.6 + 0.4 * this._int(c) }); });
+          const tok = (this._atkTok = (this._atkTok || 0) + 1); this._pendSlash = this._pendSlash || new Map(); this._pendSlash.set(ev.srcId, tok);
+          this._later(Math.max(0.04, (ev.windup ?? 0.12) * 0.85), () => { if (this._pendSlash.get(ev.srcId) !== tok) return; this._pendSlash.delete(ev.srcId); const p2 = this._ipos(s); p.x = p2.x; p.z = p2.z; V.slash(p.x + Math.cos(ang) * 1.0, 1.3, p.z + Math.sin(ang) * 1.0, ang, { color: c.vfx, r: 2.0 + (s.radius || 1) * 0.5, flip: v && v.atk % 2, alpha: 0.6 + 0.4 * this._int(c) }); });
         } else if (s.kind === 'tower') { const tv = this.views.get(ev.srcId); if (tv) { tv.charge = 1; tv.chargeT = 0; tv.chargeDur = ev.windup || 0.15; tv.chargeTarget = ev.targetId; } }
         break;
       }

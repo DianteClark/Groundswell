@@ -927,3 +927,6 @@ html.cl .loading{padding:6px calc(14px + var(--sar)) calc(6px + var(--sab)) calc
 .hud.touch .h-unit{transform:scale(.78);transform-origin:top left}
 @media (max-height:390px){.hud.touch .h-unit{transform:scale(.7)}}
 .hud .ab .ab-k{width:auto;height:auto;min-width:0;border:0;display:block;place-items:initial}
+.hs-obj .ob.swell{display:none;color:#ffb27a}.hs-obj .ob.swell.show{display:inline-flex}.hs-obj .ob.swell.up{color:#ff7a3a;animation:recast .6s ease-in-out infinite alternate}
+.hud .ab-lh,.hud .ab-tw{background:radial-gradient(circle at 40% 30%,#3a4a90,#121838);border:2px solid rgba(190,215,255,.55);border-radius:50%}
+.hud .ab-lh .ab-ic,.hud .ab-tw .ab-ic{padding:22%!important}

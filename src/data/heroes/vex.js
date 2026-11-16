@@ -2,17 +2,17 @@
 export default {
   id: 'vex', name: 'Vex', title: 'Longshot', role: 'Marksman', difficulty: 2,
   color: '#e0c341', lore: 'A bounty hunter who counts every bullet — and never needs the fourth.',
-  base: { maxHp: 545, power: 55, armor: 20, attackRange: 12.5, attackSpeed: 0.78, moveSpeed: 9.9, hpRegen: 2.2 },
+  base: { maxHp: 555, power: 56, armor: 20, attackRange: 12.5, attackSpeed: 0.78, moveSpeed: 9.9, hpRegen: 2.2 },
   growth: { maxHp: 76, power: 3.9, armor: 2.6, attackSpeed: 0.03, hpRegen: 0.18 },
   attackRatio: 1, ranged: true, projectile: 'auto_vex', missileSpeed: 62, windup: 0.18,
   abilities: {
     passive: { name: 'Piercing Round', desc: 'Every 4th attack deals +15% damage and pierces in a line, hitting all enemies behind the target for 90% damage.' },
     q: {
-      name: 'Ricochet', desc: 'Fire a shot (12m) dealing 50 (+16/lvl, +70% Power) that ricochets to 2 more nearby enemies for 65% damage, favouring champions.',
+      name: 'Ricochet', desc: 'Fire a shot (12m) dealing 54 (+17/lvl, +70% Power) that ricochets to 2 more nearby enemies for 65% damage, favouring champions.',
       cd: 7.5, range: 12, targeting: 'skillshot', tags: ['poke', 'farm'],
       bot: { kind: 'skillshot', speed: 46, radius: 0.85, poke: true, farm: true },
       cast(api, h, aim) {
-        const dmg = api.scale(h, 50, 16, 0.7);
+        const dmg = api.scale(h, 54, 17, 0.7);
         const bounces = api.aug(h, 3, 'a') ? 4 : 2;
         const onBounceHit = (t, mult) => { api.hit(h, t, dmg * mult, 'vex_q'); if (t.kind === 'hero' && api.aug(h, 3, 'b')) api.slow(h, t, 0.25, 1, 'vex_q'); };
         api.skillshot({ src: h, dirX: aim.dirX, dirY: aim.dirY, speed: 46, range: 12, radius: 0.85, visual: 'vex_q',

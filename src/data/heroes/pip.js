@@ -38,7 +38,7 @@ function wrench(api, h, from, t, bouncesLeft) {
       api.heal(tt, api.scale(h, 44, 13, 0.33) * (api.aug(h, 3, 'b') ? 1.35 : 1), h);
       api.vfx('pip_q_heal', { x: tt.x, y: tt.y, team: h.team, srcId: h.id, targetId: tt.id });
     } else {
-      api.hit(h, tt, api.scale(h, 52, 15, 0.55), 'pip_q');
+      api.hit(h, tt, api.scale(h, 48, 14, 0.52), 'pip_q');
       api.vfx('pip_q_hit', { x: tt.x, y: tt.y, team: h.team, srcId: h.id, targetId: tt.id });
     }
     if (bouncesLeft <= 0) return;
@@ -55,13 +55,13 @@ function wrench(api, h, from, t, bouncesLeft) {
 export default {
   id: 'pip', name: 'Pip & Bolt', title: 'Tinker Duo', role: 'Support', difficulty: 2,
   color: '#3cc6e0', lore: 'Pip built Bolt to carry his tools. Bolt decided, on its own, to carry Pip\'s friends too.',
-  base: { maxHp: 570, power: 49, armor: 22, attackRange: 10.5, attackSpeed: 0.7, moveSpeed: 9.9, hpRegen: 2.6 },
+  base: { maxHp: 565, power: 48, armor: 22, attackRange: 10.5, attackSpeed: 0.7, moveSpeed: 9.9, hpRegen: 2.6 },
   growth: { maxHp: 82, power: 3.6, armor: 2.8, attackSpeed: 0.015, hpRegen: 0.22 },
   attackRatio: 1, ranged: true, projectile: 'auto_pip', missileSpeed: 52,
   abilities: {
     passive: { name: 'Bolt', desc: 'Bolt the mech guards Pip\'s tethered ally: it body-blocks, reduces their damage taken by 10%, and every 9s shields them for 40 (+14/lvl, +30% Power) when hit.' },
     q: {
-      name: 'Wrench Toss', desc: 'Throw a wrench at a unit: allies heal 44 (+13/lvl, +33% Power), enemies take 52 (+15/lvl, +55% Power). It then bounces once to the other side (enemy ↔ ally).',
+      name: 'Wrench Toss', desc: 'Throw a wrench at a unit: allies heal 44 (+13/lvl, +33% Power), enemies take 48 (+14/lvl, +52% Power). It then bounces once to the other side (enemy ↔ ally).',
       cd: 6, range: 10, targeting: 'unit', targetTeam: 'any', tags: ['heal', 'poke'],
       bot: { kind: 'heal', poke: true },
       cast(api, h, aim) {

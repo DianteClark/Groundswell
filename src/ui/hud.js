@@ -2,7 +2,7 @@
 import { HERO_BY_ID, ITEM_BY_ID, RELIC_BY_ID, itemDisplay, fmtStats } from '../meta/registry.js';
 import { ico } from './icons.js';
 import { MAP } from '../sim/map.js';
-import { XP_TABLE, ULT_LEVEL, ELEMENT_INFO, WYRM_FIRST, COLOSSUS_FIRST } from '../sim/constants.js';
+import { XP_TABLE, ULT_LEVEL, ELEMENT_INFO, WYRM_FIRST, COLOSSUS_FIRST, FINAL_SWELL_AT } from '../sim/constants.js';
 import Save from '../meta/save.js';
 import { esc, frag, fmt, fmtTime, heroChipHTML } from './dom.js';
 import { sfx, setVolume, setMusicVolume } from './audio.js';
@@ -32,7 +32,7 @@ export class Hud {
     try { this.audio = new MatchAudio(match, renderer, localPlayerId); } catch (e) { this.audio = null; }
     this.root = frag(`<div class="hud ${this.touch ? 'touch' : 'desk'}" style="--ts:${this.settings.touchSize || 1}">
       <div class="h-top">
-        <div class="h-score"><span class="hs-k t0">0</span><div class="hs-mid"><span class="hs-time">0:00</span><div class="hs-obj"><span class="ob wyrm">🐉<b>—</b></span><span class="ob col">🗿<b>—</b></span></div></div><span class="hs-k t1">0</span></div>
+        <div class="h-score"><span class="hs-k t0">0</span><div class="hs-mid"><span class="hs-time">0:00</span><div class="hs-obj"><span class="ob wyrm">🐉<b>—</b></span><span class="ob col">🗿<b>—</b></span><span class="ob swell">⛰<b>—</b></span></div></div><span class="hs-k t1">0</span></div>
         <div class="hs-souls"><span class="souls t0"></span><span class="souls t1"></span></div>
       </div>
       <div class="h-mm"><canvas width="240" height="160"></canvas></div>
@@ -190,6 +190,7 @@ export class Hud {
       E.wyrm.querySelector('b').textContent = objTxt(ob.wyrm, WYRM_FIRST); E.wyrm.style.setProperty('--ec', EL_COLOR[el] || '#aaa'); E.wyrm.classList.toggle('up', !!ob.wyrm?.alive);
       E.wyrm.title = el ? (ELEMENT_INFO[el]?.name || el) + ' — ' + (ELEMENT_INFO[el]?.buff || '') : 'Wyrm';
     });
+    { const sw = m.finalSwell ? 'SWELL' : m.time >= FINAL_SWELL_AT - 240 ? fmtTime(FINAL_SWELL_AT - m.time) : ''; this._set('sw', sw, v => { const el = this.root.querySelector('.ob.swell'); if (el) { el.querySelector('b').textContent = v; el.classList.toggle('show', !!v); el.classList.toggle('up', v === 'SWELL'); } }); }
     this._set('co', objTxt(ob.colossus, COLOSSUS_FIRST), v => { E.col.querySelector('b').textContent = v; E.col.classList.toggle('up', !!ob.colossus?.alive); });
     for (const t of [0, 1]) {
       const w = Array.isArray(ts[t]?.wyrms) ? ts[t].wyrms : [];
@@ -318,6 +319,7 @@ export class Hud {
         break;
       }
       case 'announce': {
+        if (ev.kind === 'finalswell_warn') { this._banner(ev.text || 'The ground begins to swell…', null, 'swellwarn'); break; }
         const big = ['firstblood', 'streak', 'wyrm', 'colossus', 'soul', 'objective'].includes(ev.kind) || !ev.kind;
         if (ev.kind === 'tower' || !big) this._feed(`<span class="fx">${esc(ev.text)}</span>`, ev.team);
         else this._banner(ev.text, ev.team, ev.kind, ev.element);
@@ -325,6 +327,7 @@ export class Hud {
       }
       case 'levelup': if (ev.id === me) { this.els.lvl.classList.remove('pop'); void this.els.lvl.offsetWidth; this.els.lvl.classList.add('pop'); if (ev.level === ULT_LEVEL) this.flashHint('Ultimate unlocked!'); } break;
       case 'buy': if (ev.id === me) { this.cache.shopSig = ''; } break;
+      case 'finalswell': this._banner('Minions surge · structures weaken · objectives worth double', null, 'finalswell'); break;
       case 'match_end': this._end(ev.winner); break;
     }
   }
@@ -336,10 +339,10 @@ export class Hud {
   }
   _banner(text, team, kind, element) {
     const b = this.els.banner;
-    const col = element ? EL_COLOR[element] : team === this.team ? '#5fb3ff' : team === 1 - this.team ? '#ff5f6d' : '#ffd36a';
-    b.innerHTML = `<div class="bn-in" style="--bc:${col}"><span class="bn-k">${esc({ firstblood: 'FIRST BLOOD', streak: 'RAMPAGE', wyrm: 'WYRM SLAIN', colossus: 'COLOSSUS', soul: 'SOUL CLAIMED', objective: 'OBJECTIVE' }[kind] || '')}</span><b>${esc(text)}</b></div>`;
+    const col = kind === 'finalswell' || kind === 'swellwarn' ? '#ff7a3a' : element ? EL_COLOR[element] : team === this.team ? '#5fb3ff' : team === 1 - this.team ? '#ff5f6d' : '#ffd36a';
+    b.innerHTML = `<div class="bn-in" style="--bc:${col}"><span class="bn-k">${esc({ firstblood: 'FIRST BLOOD', streak: 'RAMPAGE', wyrm: 'WYRM SLAIN', colossus: 'COLOSSUS', soul: 'SOUL CLAIMED', objective: 'OBJECTIVE', finalswell: 'THE FINAL SWELL', swellwarn: 'FINAL SWELL INCOMING' }[kind] || '')}</span><b>${esc(text)}</b></div>`;
     b.classList.remove('on'); void b.offsetWidth; b.classList.add('on');
-    sfx(kind === 'objective' || kind === 'wyrm' || kind === 'colossus' || kind === 'soul' ? 'objective' : 'kill');
+    if (kind !== 'finalswell' && kind !== 'swellwarn') sfx(kind === 'objective' || kind === 'wyrm' || kind === 'colossus' || kind === 'soul' ? 'objective' : 'kill');
     clearTimeout(this._bt); this._bt = setTimeout(() => b.classList.remove('on'), 3200);
   }
   _end(winner) {
@@ -451,6 +454,17 @@ export class Hud {
     const cs = getComputedStyle(pr);
     return { t: parseFloat(cs.paddingTop) || 0, r: parseFloat(cs.paddingRight) || 0, b: parseFloat(cs.paddingBottom) || 0, l: parseFloat(cs.paddingLeft) || 0 };
   }
+  /** Places the combat lead's last-hit + structure buttons in the HUD's touch cluster. */
+  placeExtraButtons(lh, tw) {
+    const L = this.layout; if (!L) return false; this._extra = [lh, tw];
+    const { a, A, R, R2, cx, cy } = L; const s = Math.round(Math.max(36, a * 0.6));
+    const put = (el, ang, rad) => { if (!el) return; const t = ang * Math.PI / 180; const x = cx + rad * Math.cos(t), y = cy - rad * Math.sin(t);
+      Object.assign(el.style, { position: 'absolute', left: Math.round(x - s / 2) + 'px', top: Math.round(y - s / 2) + 'px', width: s + 'px', height: s + 'px', right: 'auto', bottom: 'auto', pointerEvents: 'auto', zIndex: 3 });
+      el.style.setProperty('--s', s + 'px'); el.style.setProperty('--abs', s + 'px'); };
+    put(lh, 62, A / 2 + s * 0.42);            // last-hit: top-right shoulder of the attack button
+    put(tw, 88, R2 - a * 0.15);              // structure: above R
+    return true;
+  }
   _layoutTouch() {
     const W = window.innerWidth, H = window.innerHeight; if (!W || !H) return;
     const si = this.safeInsets(); const ts = Save.get().settings.touchSize || 1;
@@ -489,6 +503,8 @@ export class Hud {
     // aim-cancel: above the ability cluster, away from thumbs
     st.setProperty('--cx', Math.round(cx - R * 0.4) + 'px'); st.setProperty('--cy', Math.round(Math.max(si.t + 60, cy - R2 - a * 1.4)) + 'px');
     this.layout = { a, A, R, R2, cx, cy, jb, si, W, H };
+    if (E.prio) E.prio.style.display = 'none'; // smart attack + dedicated last-hit/structure buttons replace the priority toggle
+    if (this._extra) this.placeExtraButtons(...this._extra);
   }
 
   dispose() {
