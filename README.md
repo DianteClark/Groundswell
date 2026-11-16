@@ -4,7 +4,7 @@
 
 ## ▶ Play now
 
-**Live game:** https://dianteclark.github.io/groundswell/
+**Live game:** https://dianteclark.github.io/Groundswell/
 
 Runs in any modern browser on phone or desktop. No install, no account, no servers — it's one self-contained HTML file.
 
@@ -56,7 +56,7 @@ Each hero ships with 4 skins (default, common, epic, legendary).
 
 ```bash
 npm install
-npm run build        # → dist/index.html (single self-contained file)
+npm run build        # → dist/index.html, copied to ./index.html for release
 ```
 
 - `src/sim/` — deterministic fixed-tick (30 Hz) simulation: map, nav, minions, towers, objectives, combat (lockstep-ready for P2P)
@@ -65,7 +65,7 @@ npm run build        # → dist/index.html (single self-contained file)
 - `src/render/` — Three.js low-poly renderer, models, VFX
 - `src/ui/`, `src/meta/` — menus, HUD, input, saves, economy
 - `tools/` — headless bot-vs-bot balance & smoke tests (`node tools/smoke.mjs`, `sh tools/par.sh 12 3`)
-- `docs/index.html` — the built game served by GitHub Pages
+- `index.html` — the built game (served by GitHub Pages)
 - `SPEC.md` — technical contract between systems
 
 ![Loading screen](media/e2e_loading_1280.png)
